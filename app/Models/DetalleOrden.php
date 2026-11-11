@@ -14,20 +14,30 @@ class DetalleOrden extends Model
     ];
     protected $casts = ['monto' => 'decimal:2', 'fecha_evidencia' => 'datetime'];
 
+    // La ruta interna del archivo nunca sale al cliente
+    protected $hidden = ['ruta_evidencia'];
+
     // Se agrega automáticamente a todo JSON que devuelva este modelo
     protected $appends = ['url_evidencia'];
 
-    // URL completa de la foto, o null si aún no hay evidencia.
-    // asset() usa el mismo host con el que la app llamó a la API
-    // (por ejemplo http://10.0.2.2:8000 desde el emulador), así que la URL le sirve a la app.
+    // URL de la foto servida por la ruta protegida (/api/detalle-ordenes/{id}/evidencia).
+    // Solo se entrega a admin/contabilidad; un conductor (o alguien sin sesión) recibe null.
     protected function urlEvidencia(): Attribute
     {
-        return Attribute::get(
-            fn () => $this->ruta_evidencia ? asset('storage/' . $this->ruta_evidencia) : null
-        );
+        return Attribute::get(function () {
+            if (! $this->ruta_evidencia || ! $this->id) {
+                return null;
+            }
+
+            $usuario = auth('sanctum')->user();
+            if (! $usuario || ! $usuario->can('consulta')) {
+                return null;
+            }
+
+            return route('detalle-ordenes.evidencia', ['id' => $this->id]);
+        });
     }
 
     public function orden()    { return $this->belongsTo(Orden::class, 'orden_id'); }
     public function vehiculo() { return $this->belongsTo(Vehiculo::class, 'vehiculo_id'); }
-    //si
 }

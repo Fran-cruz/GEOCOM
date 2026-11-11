@@ -7,6 +7,7 @@ use App\Models\{DetalleOrden, Gasolinera, Orden, Solicitud};
 use App\Notifications\{OrdenAsignada, OrdenCompletada};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class OrdenController extends Controller
@@ -156,8 +157,8 @@ class OrdenController extends Controller
         abort_if($detalle->ruta_evidencia, 422, 'Esta línea ya tiene evidencia.');  // una foto por línea
 
         DB::transaction(function () use ($request, $detalle, $orden) {
-            // Se guarda en storage/app/public/evidencias/{id_orden}/...
-            $ruta = $request->file('foto')->store("evidencias/{$orden->id}", 'public');
+            // Se guarda en storage/app/private/evidencias/{id_orden}/... (disco privado)
+            $ruta = $request->file('foto')->store("evidencias/{$orden->id}", 'local');
             $detalle->update(['ruta_evidencia' => $ruta, 'fecha_evidencia' => now()]);
 
             // Si ya no quedan líneas sin foto, la orden se completa
@@ -175,6 +176,20 @@ class OrdenController extends Controller
         }
 
         return $orden;
+    }
+
+    // Sirve la foto desde el disco privado; solo admin/contabilidad con token válido
+    public function verEvidencia(string $id)
+    {
+        $detalle = DetalleOrden::findOrFail($id);
+
+        abort_unless($detalle->ruta_evidencia, 404);
+        abort_unless(Storage::disk('local')->exists($detalle->ruta_evidencia), 404);
+
+        return Storage::disk('local')->response($detalle->ruta_evidencia, null, [
+            'Cache-Control'          => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     // Antes del escaneo la orden está oculta: el conductor no ve montos ni líneas

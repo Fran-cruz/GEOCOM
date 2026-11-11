@@ -40,6 +40,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Admin y contabilidad: solo lectura ---
     Route::middleware('can:consulta')->group(function () {
+        Route::get('detalle-ordenes/{id}/evidencia', [OrdenController::class, 'verEvidencia'])
+            ->name('detalle-ordenes.evidencia');
         Route::apiResource('conductores', ConductorController::class)->only(['index', 'show']);
         Route::apiResource('vehiculos', VehiculoController::class)->only(['show']);
         Route::apiResource('gasolineras', GasolineraController::class)->only(['index', 'show']);
