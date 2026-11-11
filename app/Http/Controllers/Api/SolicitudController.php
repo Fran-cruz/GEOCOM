@@ -39,6 +39,22 @@ class SolicitudController extends Controller
         return response()->json($solicitud->load('vehiculo'), 201);
     }
 
+    // El admin rechaza una solicitud pendiente. No se genera orden.
+    public function rechazar(string $id)
+    {
+        $solicitud = Solicitud::findOrFail($id);
+
+        abort_unless(
+            $solicitud->estado === 'pendiente',
+            422,
+            'Solo se pueden rechazar solicitudes pendientes.'
+        );
+
+        $solicitud->update(['estado' => 'rechazada']);
+
+        return response()->json($solicitud->load('conductor.usuario:id,name', 'vehiculo'));
+    }
+
     public function show(Request $request, string $id)
     {
         $solicitud = Solicitud::findOrFail($id);

@@ -58,5 +58,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('gasolineras', GasolineraController::class)->only(['store', 'update', 'destroy']);
         Route::post('caja-chica', [CajaChicaController::class, 'store']);
         Route::post('ordenes', [OrdenController::class, 'store']); // asignar montos y generar la orden
+        Route::post('solicitudes/{id}/rechazar', [SolicitudController::class, 'rechazar']); // rechazar solicitud pendiente
     });
 });
