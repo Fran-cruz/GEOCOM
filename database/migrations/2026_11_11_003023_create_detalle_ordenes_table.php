@@ -13,6 +13,14 @@ return new class extends Migration
     {
         Schema::create('detalle_ordenes', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('orden_id')->constrained('ordenes')->cascadeOnDelete();
+            $table->enum('tipo_destino', ['vehiculo', 'mgp']);
+            $table->foreignId('vehiculo_id')->nullable()->constrained('vehiculos')->nullOnDelete(); // null si es MGP
+            $table->string('descripcion_mgp', 150)->nullable();
+            $table->enum('tipo_combustible', ['diesel', 'gasolina']);
+            $table->decimal('monto', 10, 2);                // en lempiras
+            $table->string('ruta_evidencia')->nullable();   // foto subida por el conductor
+            $table->timestamp('fecha_evidencia')->nullable();
             $table->timestamps();
         });
     }
