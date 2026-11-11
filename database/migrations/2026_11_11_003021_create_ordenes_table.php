@@ -19,10 +19,11 @@ return new class extends Migration
             $table->foreignId('conductor_id')->constrained('conductores')->restrictOnDelete();
             $table->foreignId('gasolinera_id')->constrained('gasolineras')->restrictOnDelete();
             $table->foreignId('asignado_por')->constrained('users')->restrictOnDelete(); // admin que asignó
-            $table->enum('estado', ['pendiente', 'abierta', 'completada', 'vencida'])->default('pendiente');
+            $table->enum('estado', ['pendiente', 'abierta', 'abierta_tarde', 'completada', 'completada_tarde', 'vencida'])->default('pendiente');
             $table->unsignedTinyInteger('horas_vigencia')->default(1); // 1 a 3 horas
-            $table->timestamp('fecha_asignacion');
-            $table->timestamp('vence_asignacion');          // fin de la 1.ª vigencia (antes de escanear)
+            $table->text('justificacion')->nullable();              // motivo cuando la orden se completa tarde
+            $table->timestamp('fecha_asignacion')->nullable();      // momento de la asignación (cuando se genera la orden)
+            $table->timestamp('vence_asignacion')->nullable();          // fin de la 1.ª vigencia (antes de escanear)
             $table->timestamp('fecha_apertura')->nullable();// momento del escaneo del QR
             $table->timestamp('vence_apertura')->nullable();// +15 min tras el escaneo
             $table->timestamp('fecha_completada')->nullable();

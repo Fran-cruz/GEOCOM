@@ -12,7 +12,7 @@ class Orden extends Model
     protected $table = 'ordenes';
     protected $fillable = [
         'numero_orden', 'solicitud_id', 'conductor_id', 'gasolinera_id', 'asignado_por',
-        'estado', 'horas_vigencia', 'fecha_asignacion', 'vence_asignacion',
+        'estado', 'horas_vigencia', 'justificacion', 'fecha_asignacion', 'vence_asignacion',
         'fecha_apertura', 'vence_apertura', 'fecha_completada',
     ];
     // Los timestamp se convierten en objetos Carbon (permiten ->format(), ->addHours(), etc.)
