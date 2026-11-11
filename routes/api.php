@@ -4,6 +4,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CajaChicaController;
 use App\Http\Controllers\Api\ConductorController;
+use App\Http\Controllers\Api\EvidenciaController;
 use App\Http\Controllers\Api\GasolineraController;
 use App\Http\Controllers\Api\OrdenController;
 use App\Http\Controllers\Api\ReporteController;
@@ -40,8 +41,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Admin y contabilidad: solo lectura ---
     Route::middleware('can:consulta')->group(function () {
-        Route::get('detalle-ordenes/{id}/evidencia', [OrdenController::class, 'verEvidencia'])
-            ->name('detalle-ordenes.evidencia');
+        Route::get('evidencias/{id}', [EvidenciaController::class, 'ver'])
+            ->name('evidencias.ver');
         Route::apiResource('conductores', ConductorController::class)->only(['index', 'show']);
         Route::apiResource('vehiculos', VehiculoController::class)->only(['show']);
         Route::apiResource('gasolineras', GasolineraController::class)->only(['index', 'show']);

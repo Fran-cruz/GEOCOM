@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{DetalleOrden, Gasolinera, Orden, Solicitud};
+use App\Models\{DetalleOrden, Evidencia, Gasolinera, Orden, Solicitud};
 use App\Notifications\{OrdenAsignada, OrdenCompletada};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class OrdenController extends Controller
@@ -18,7 +17,7 @@ class OrdenController extends Controller
         Orden::marcarVencidas(); // respaldo: actualiza vencimientos antes de listar
 
         // when() aplica cada filtro solo si viene en la petición
-        $consulta = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo'])
+        $consulta = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo', 'detalles.evidencias'])
             ->when($request->estado,        fn ($q, $v) => $q->where('estado', $v))
             ->when($request->conductor_id,  fn ($q, $v) => $q->where('conductor_id', $v))
             ->when($request->gasolinera_id, fn ($q, $v) => $q->where('gasolinera_id', $v))
@@ -87,7 +86,7 @@ class OrdenController extends Controller
         });
 
         // Se avisa por correo al conductor y a contabilidad (fuera de la transacción)
-        $orden->load('detalles', 'gasolinera', 'conductor.usuario');
+        $orden->load('detalles.evidencias', 'gasolinera', 'conductor.usuario');
         $orden->avisar(new OrdenAsignada($orden));
 
         return response()->json($orden, 201);
@@ -97,7 +96,7 @@ class OrdenController extends Controller
     {
         Orden::marcarVencidas();
 
-        $orden = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo'])->findOrFail($id);
+        $orden = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo', 'detalles.evidencias'])->findOrFail($id);
 
         if ($conductor = $request->user()->conductor) {
             abort_if($orden->conductor_id !== $conductor->id, 403); // no es suya
@@ -138,13 +137,16 @@ class OrdenController extends Controller
             'vence_apertura' => now()->addMinutes(15),
         ]);
 
-        return $orden->load('detalles.vehiculo', 'gasolinera');
+        return $orden->load('detalles.vehiculo', 'gasolinera', 'detalles.evidencias');
     }
 
-    // Evidencia por línea; al completar todas, la orden se cierra ($id es el id del detalle)
+    // Sube una de las 4 evidencias de una línea. Al completar todas las líneas, la orden se cierra.
     public function subirEvidencia(Request $request, string $id)
     {
-        $request->validate(['foto' => 'required|image|mimes:jpg,jpeg,png|max:5120']); // máx. 5 MB
+        $datos = $request->validate([
+            'foto' => 'required|image|mimes:jpg,jpeg,png|max:5120', // máx. 5 MB
+            'tipo' => 'required|in:' . implode(',', Evidencia::TIPOS), // bomba|tablero|tanque|factura
+        ]);
 
         $conductor = $request->user()->conductor ?? abort(403);
         $detalle = DetalleOrden::findOrFail($id);
@@ -154,21 +156,42 @@ class OrdenController extends Controller
 
         abort_unless($orden->conductor_id === $conductor->id, 403);                // debe ser suya
         abort_unless($orden->estado === 'abierta', 422, 'La orden no está abierta o ya venció.');
-        abort_if($detalle->ruta_evidencia, 422, 'Esta línea ya tiene evidencia.');  // una foto por línea
 
-        DB::transaction(function () use ($request, $detalle, $orden) {
-            // Se guarda en storage/app/private/evidencias/{id_orden}/... (disco privado)
-            $ruta = $request->file('foto')->store("evidencias/{$orden->id}", 'local');
-            $detalle->update(['ruta_evidencia' => $ruta, 'fecha_evidencia' => now()]);
+        // Una sola foto de cada tipo por línea
+        abort_if(
+            $detalle->evidencias()->where('tipo', $datos['tipo'])->exists(),
+            422,
+            'Ese tipo de evidencia ya fue subido para esta línea.'
+        );
 
-            // Si ya no quedan líneas sin foto, la orden se completa
-            if ($orden->detalles()->whereNull('ruta_evidencia')->doesntExist()) {
+        DB::transaction(function () use ($request, $detalle, $orden, $datos) {
+            // storage/app/private/evidencias/{id_orden}/{id_detalle}/{tipo}/archivo
+            $ruta = $request->file('foto')->store(
+                "evidencias/{$orden->id}/{$detalle->id}/{$datos['tipo']}",
+                'local'
+            );
+
+            $detalle->evidencias()->create([
+                'tipo'         => $datos['tipo'],
+                'ruta'         => $ruta,
+                'fecha_subida' => now(),
+            ]);
+
+            // La orden se completa solo cuando TODAS las líneas tienen las 4 fotos
+            $completa = $orden->detalles()->with('evidencias')->get()->every(
+                fn (DetalleOrden $linea) => $linea->evidencias
+                    ->pluck('tipo')
+                    ->unique()
+                    ->count() >= count(Evidencia::TIPOS)
+            );
+
+            if ($completa) {
                 $orden->update(['estado' => 'completada', 'fecha_completada' => now()]);
             }
         });
 
         // Se recarga para ver el estado real tras la transacción
-        $orden = $orden->fresh(['detalles', 'gasolinera', 'conductor.usuario']);
+        $orden = $orden->fresh(['detalles.evidencias', 'gasolinera', 'conductor.usuario']);
 
         // Solo se avisa si esta foto fue la que cerró la orden
         if ($orden->estado === 'completada') {
@@ -176,20 +199,6 @@ class OrdenController extends Controller
         }
 
         return $orden;
-    }
-
-    // Sirve la foto desde el disco privado; solo admin/contabilidad con token válido
-    public function verEvidencia(string $id)
-    {
-        $detalle = DetalleOrden::findOrFail($id);
-
-        abort_unless($detalle->ruta_evidencia, 404);
-        abort_unless(Storage::disk('local')->exists($detalle->ruta_evidencia), 404);
-
-        return Storage::disk('local')->response($detalle->ruta_evidencia, null, [
-            'Cache-Control'          => 'private, no-store, max-age=0',
-            'X-Content-Type-Options' => 'nosniff',
-        ]);
     }
 
     // Antes del escaneo la orden está oculta: el conductor no ve montos ni líneas
