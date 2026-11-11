@@ -1,15 +1,16 @@
 <?php
 
+
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CajaChicaController;
+use App\Http\Controllers\Api\ConductorController;
+use App\Http\Controllers\Api\GasolineraController;
+use App\Http\Controllers\Api\OrdenController;
+use App\Http\Controllers\Api\ReporteController;
+use App\Http\Controllers\Api\SolicitudController;
+use App\Http\Controllers\Api\VehiculoController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\ConductorController;
-use App\Http\Controllers\VehiculoController;
-use App\Http\Controllers\GasolineraController;
-use App\Http\Controllers\SolicitudController;
-use App\Http\Controllers\OrdenController;
-use App\Http\Controllers\CajaChicaController;
-use App\Http\Controllers\ReporteController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
