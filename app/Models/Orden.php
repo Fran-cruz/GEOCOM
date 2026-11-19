@@ -56,7 +56,7 @@ class Orden extends Model
     // pendiente vence con 'vence_asignacion'; abierta (ya escaneada) vence con 'vence_apertura'.
     public static function marcarVencidas(): void
     {
-        foreach ([['pendiente', 'vence_asignacion'], ['abierta', 'vence_apertura']] as [$estado, $campo]) {
+        foreach ([['pendiente', 'vence_asignacion'], ['abierta', 'vence_apertura'], ['abierta_tarde', 'vence_apertura']] as [$estado, $campo]) {
             static::with('gasolinera', 'conductor.usuario')
                 ->where('estado', $estado)
                 ->where($campo, '<', now())

@@ -38,7 +38,7 @@ class ReporteController extends Controller
     {
         return DetalleOrden::query()
             ->join('ordenes', 'ordenes.id', '=', 'detalle_ordenes.orden_id')
-            ->where('ordenes.estado', 'completada')
+            ->whereIn('ordenes.estado', ['completada', 'completada_tarde'])
             ->when($request->desde, fn ($q, $v) => $q->whereDate('ordenes.fecha_completada', '>=', $v))
             ->when($request->hasta, fn ($q, $v) => $q->whereDate('ordenes.fecha_completada', '<=', $v));
     }

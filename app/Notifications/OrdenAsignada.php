@@ -20,11 +20,19 @@ class OrdenAsignada extends Notification
     // $notifiable es el User que recibe el correo (conductor o contabilidad)
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
+        $mensaje = (new MailMessage)
             ->subject("Orden {$this->orden->numero_orden} asignada")
             ->greeting("Hola {$notifiable->name}")
             ->line("Se asignó la orden {$this->orden->numero_orden}.")
-            ->line("Gasolinera: {$this->orden->gasolinera->nombre}")
+            ->line("Gasolinera: {$this->orden->gasolinera->nombre}");
+
+        if ($this->orden->estado === 'abierta_tarde') {
+            return $mensaje
+                ->line('La orden fue rehabilitada y ya está abierta para subir evidencias.')
+                ->line('Sube las evidencias antes del ' . $this->orden->vence_apertura->format('d/m/Y h:i A') . '.');
+        }
+
+        return $mensaje
             ->line("Vigencia: {$this->orden->horas_vigencia} hora(s), hasta el "
                 . $this->orden->vence_asignacion->format('d/m/Y h:i A'))
             ->line('Escanea el QR de la gasolinera antes de que venza.');

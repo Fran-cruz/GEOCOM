@@ -18,7 +18,11 @@ class OrdenController extends Controller
 
         // when() aplica cada filtro solo si viene en la petición
         $consulta = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo', 'detalles.evidencias'])
-            ->when($request->estado,        fn ($q, $v) => $q->where('estado', $v))
+            ->when($request->estado, function ($q, $v) {
+                $estados = array_filter(array_map('trim', explode(',', $v)));
+
+                return $q->whereIn('estado', $estados);
+            })
             ->when($request->conductor_id,  fn ($q, $v) => $q->where('conductor_id', $v))
             ->when($request->gasolinera_id, fn ($q, $v) => $q->where('gasolinera_id', $v))
             ->when($request->desde,         fn ($q, $v) => $q->whereDate('fecha_asignacion', '>=', $v))
@@ -97,7 +101,6 @@ class OrdenController extends Controller
     {
         $datos = $request->validate([
             'horas_vigencia' => 'required|integer|between:1,3',
-            'justificacion'  => 'required|string|max:500',
         ]);
 
         $orden = Orden::with(['detalles', 'gasolinera', 'conductor.usuario'])->findOrFail($id);
@@ -107,14 +110,14 @@ class OrdenController extends Controller
         $ahora = now();
 
         $orden->update([
-            'estado'           => 'pendiente',
+            'estado'           => 'abierta_tarde',
             'horas_vigencia'   => $datos['horas_vigencia'],
-            'justificacion'    => $datos['justificacion'],
+            'justificacion'    => null,
             'asignado_por'     => $request->user()->id,
             'fecha_asignacion' => $ahora,
             'vence_asignacion' => $ahora->copy()->addHours($datos['horas_vigencia']),
-            'fecha_apertura'   => null,
-            'vence_apertura'   => null,
+            'fecha_apertura'   => $ahora,
+            'vence_apertura'   => $ahora->copy()->addMinutes(15),
             'fecha_completada' => null,
         ]);
 
@@ -181,6 +184,7 @@ class OrdenController extends Controller
         $datos = $request->validate([
             'foto' => 'required|image|mimes:jpg,jpeg,png|max:5120', // máx. 5 MB
             'tipo' => 'required|in:' . implode(',', Evidencia::TIPOS), // bomba|tablero|tanque|factura
+            'justificacion' => 'nullable|string|max:500',
         ]);
 
         $conductor = $request->user()->conductor ?? abort(403);
@@ -190,7 +194,15 @@ class OrdenController extends Controller
         $orden = $detalle->orden()->first();
 
         abort_unless($orden->conductor_id === $conductor->id, 403);                // debe ser suya
-        abort_unless($orden->estado === 'abierta', 422, 'La orden no está abierta o ya venció.');
+        abort_unless(in_array($orden->estado, ['abierta', 'abierta_tarde'], true), 422, 'La orden no está abierta o ya venció.');
+
+        if ($orden->estado === 'abierta_tarde' && ! $orden->justificacion && empty($datos['justificacion'])) {
+            abort(422, 'La justificación es obligatoria para una orden abierta tarde.');
+        }
+
+        if (! empty($datos['justificacion'])) {
+            $orden->update(['justificacion' => $datos['justificacion']]);
+        }
 
         // Una sola foto de cada tipo por línea
         abort_if(
@@ -221,7 +233,10 @@ class OrdenController extends Controller
             );
 
             if ($completa) {
-                $orden->update(['estado' => 'completada', 'fecha_completada' => now()]);
+                $orden->update([
+                    'estado' => $orden->estado === 'abierta_tarde' ? 'completada_tarde' : 'completada',
+                    'fecha_completada' => now(),
+                ]);
             }
         });
 
@@ -229,7 +244,7 @@ class OrdenController extends Controller
         $orden = $orden->fresh(['detalles.evidencias', 'gasolinera', 'conductor.usuario']);
 
         // Solo se avisa si esta foto fue la que cerró la orden
-        if ($orden->estado === 'completada') {
+        if (in_array($orden->estado, ['completada', 'completada_tarde'], true)) {
             $orden->avisar(new OrdenCompletada($orden));
         }
 
