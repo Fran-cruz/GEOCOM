@@ -92,6 +92,41 @@ class OrdenController extends Controller
         return response()->json($orden, 201);
     }
 
+    // El administrador puede dar una nueva oportunidad a una orden vencida.
+    public function rehabilitar(Request $request, string $id)
+    {
+        $datos = $request->validate([
+            'horas_vigencia' => 'required|integer|between:1,3',
+            'justificacion'  => 'required|string|max:500',
+        ]);
+
+        $orden = Orden::with(['detalles', 'gasolinera', 'conductor.usuario'])->findOrFail($id);
+
+        abort_unless($orden->estado === 'vencida', 422, 'Solo se pueden rehabilitar órdenes vencidas.');
+
+        $ahora = now();
+
+        $orden->update([
+            'estado'           => 'pendiente',
+            'horas_vigencia'   => $datos['horas_vigencia'],
+            'justificacion'    => $datos['justificacion'],
+            'asignado_por'     => $request->user()->id,
+            'fecha_asignacion' => $ahora,
+            'vence_asignacion' => $ahora->copy()->addHours($datos['horas_vigencia']),
+            'fecha_apertura'   => null,
+            'vence_apertura'   => null,
+            'fecha_completada' => null,
+        ]);
+
+        $orden->avisar(new OrdenAsignada($orden));
+
+        return response()->json($orden->fresh([
+            'detalles.vehiculo',
+            'gasolinera',
+            'conductor.usuario',
+        ]));
+    }
+
     public function show(Request $request, string $id)
     {
         Orden::marcarVencidas();
