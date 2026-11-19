@@ -24,6 +24,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('yo', [AuthController::class, 'yo']);
+    Route::post('verificar-contrasena', [AuthController::class, 'verificarContrasena']);
 
     // --- Solo conductor ---
     Route::middleware('can:conductor')->group(function () {

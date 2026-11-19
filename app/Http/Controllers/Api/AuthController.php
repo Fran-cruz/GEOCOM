@@ -52,6 +52,39 @@ class AuthController extends Controller
         ]);
     }
 
+    // Reautenticación para acciones sensibles desde la app móvil.
+    // El token identifica al usuario; la contraseña confirma que la acción
+    // la está autorizando la persona que tiene el dispositivo desbloqueado.
+    public function verificarContrasena(Request $request)
+    {
+        $datos = $request->validate([
+            'contrasena' => 'required|string',
+        ]);
+
+        $usuario = $request->user();
+        $rol = $usuario->roles()->wherePivot('activo', true)->first();
+
+        if (! $rol || ($rol->nombre === 'conductor' && ! $usuario->conductor?->activo)) {
+            return response()->json([
+                'permitido' => false,
+                'mensaje' => 'El usuario no tiene un rol activo.',
+            ], 403);
+        }
+
+        if (! Hash::check($datos['contrasena'], $usuario->password)) {
+            return response()->json([
+                'permitido' => false,
+                'mensaje' => 'Contraseña incorrecta.',
+            ], 401);
+        }
+
+        return response()->json([
+            'permitido' => true,
+            'usuario_id' => $usuario->id,
+            'rol' => $rol->nombre,
+        ]);
+    }
+
     // Logout: elimina solo el token con el que se hizo la petición
     public function logout(Request $request)
     {
