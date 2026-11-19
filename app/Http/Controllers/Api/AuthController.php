@@ -31,10 +31,18 @@ class AuthController extends Controller
             return response()->json(['mensaje' => 'Tu cuenta está desactivada o no tiene un rol asignado.'], 403);
         }
 
-        $token = $usuario->createToken($datos['nombre_dispositivo'] ?? 'app-movil')->plainTextToken;
+        // Los tokens móviles no caducan. Se revocan únicamente al cerrar sesión
+        // (o si se eliminan manualmente desde personal_access_tokens).
+        $token = $usuario->createToken(
+            $datos['nombre_dispositivo'] ?? 'app-movil',
+            ['mobile'],
+            null
+        )->plainTextToken;
 
         return response()->json([
             'token'   => $token,
+            'token_type' => 'Bearer',
+            'expira' => false,
             'usuario' => [
                 'id'     => $usuario->id,
                 'nombre' => $usuario->name,
