@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // --- Solo conductor ---
     Route::middleware('can:conductor')->group(function () {
         Route::post('solicitudes', [SolicitudController::class, 'store']);
+        Route::put('solicitudes/{id}', [SolicitudController::class, 'update']);
         Route::post('ordenes/escanear', [OrdenController::class, 'escanear']);
         Route::post('detalle-ordenes/{id}/evidencia', [OrdenController::class, 'subirEvidencia']);
     });

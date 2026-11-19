@@ -39,6 +39,37 @@ class SolicitudController extends Controller
         return response()->json($solicitud->load('vehiculo'), 201);
     }
 
+    public function update(Request $request, string $id)
+    {
+        $conductor = $request->user()->conductor;
+        abort_unless($conductor && $conductor->activo, 403, 'Solo un conductor activo puede editar solicitudes.');
+
+        $solicitud = Solicitud::findOrFail($id);
+
+        abort_if($solicitud->conductor_id !== $conductor->id, 403);
+        abort_unless($solicitud->estado === 'pendiente', 422, 'Solo se pueden editar solicitudes pendientes.');
+
+        $datos = $request->validate([
+            'tipo_destino'          => 'required|in:vehiculo,mgp,ambos',
+            'vehiculo_id'           => 'required_if:tipo_destino,vehiculo,ambos|nullable|exists:vehiculos,id',
+            'descripcion_mgp'       => 'required_if:tipo_destino,mgp,ambos|nullable|string|max:150',
+            'descripcion_actividad' => 'required|string|max:1000',
+        ]);
+
+        $solicitud->update([
+            'tipo_destino'          => $datos['tipo_destino'],
+            'vehiculo_id'           => in_array($datos['tipo_destino'], ['vehiculo', 'ambos'], true)
+                ? ($datos['vehiculo_id'] ?? null)
+                : null,
+            'descripcion_mgp'       => in_array($datos['tipo_destino'], ['mgp', 'ambos'], true)
+                ? ($datos['descripcion_mgp'] ?? null)
+                : null,
+            'descripcion_actividad' => $datos['descripcion_actividad'],
+        ]);
+
+        return response()->json($solicitud->fresh('vehiculo'));
+    }
+
     // El admin rechaza una solicitud pendiente. No se genera orden.
     public function rechazar(string $id)
     {
