@@ -23,6 +23,7 @@ class VehiculoController extends Controller
             'modelo'           => 'required|string|max:80',
             'anio'             => 'nullable|integer|between:1980,2100',
             'tipo_combustible' => 'sometimes|in:diesel,gasolina',
+            'rendimiento_km_litro' => 'required|numeric|between:0.01,99.99',
         ]);
 
         return response()->json(Vehiculo::create($datos), 201);
@@ -44,6 +45,7 @@ class VehiculoController extends Controller
             'modelo'           => 'sometimes|string|max:80',
             'anio'             => 'nullable|integer|between:1980,2100',
             'tipo_combustible' => 'sometimes|in:diesel,gasolina',
+            'rendimiento_km_litro' => 'sometimes|numeric|between:0.01,99.99',
             'activo'           => 'sometimes|boolean',
         ]);
 
