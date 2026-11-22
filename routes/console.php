@@ -20,5 +20,5 @@ $scraperPython = env(
 );
 
 Schedule::exec($scraperPython . ' ' . base_path('scraper-combustibles/scraper.py') . ' run')
-    ->dailyAt('08:00')
+    ->dailyAt('05:00')
     ->withoutOverlapping();
