@@ -1,0 +1,7 @@
+.env
+.venv/
+imagenes/
+salida/
+*.sqlite
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,8 @@
+requests
+beautifulsoup4
+rapidocr-onnxruntime
+pillow
+numpy
+sqlalchemy
+pymysql
+python-dotenv
