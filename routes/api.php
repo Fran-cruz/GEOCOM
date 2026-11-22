@@ -3,6 +3,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CajaChicaController;
+use App\Http\Controllers\Api\CombustibleController;
 use App\Http\Controllers\Api\ConductorController;
 use App\Http\Controllers\Api\EvidenciaController;
 use App\Http\Controllers\Api\GasolineraController;
@@ -36,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Todos los roles (el controlador filtra según quién consulta) ---
     Route::get('vehiculos', [VehiculoController::class, 'index']);
+    Route::get('combustibles', [CombustibleController::class, 'index']);
     Route::get('solicitudes', [SolicitudController::class, 'index']);
     Route::get('solicitudes/{id}', [SolicitudController::class, 'show']);
     Route::get('ordenes', [OrdenController::class, 'index']);
@@ -60,6 +62,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('gasolineras', GasolineraController::class)->only(['store', 'update', 'destroy']);
         Route::post('caja-chica', [CajaChicaController::class, 'store']);
         Route::post('ordenes', [OrdenController::class, 'store']); // asignar montos y generar la orden
+        Route::post('ordenes/estimar', [OrdenController::class, 'estimar']);
         Route::post('ordenes/{id}/rehabilitar', [OrdenController::class, 'rehabilitar']);
         Route::post('solicitudes/{id}/rechazar', [SolicitudController::class, 'rechazar']); // rechazar solicitud pendiente
     });

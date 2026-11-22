@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\{DetalleOrden, Evidencia, Gasolinera, Orden, Solicitud};
+use App\Models\{Combustible, Vehiculo};
 use App\Notifications\{OrdenAsignada, OrdenCompletada};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -94,6 +95,40 @@ class OrdenController extends Controller
         $orden->avisar(new OrdenAsignada($orden));
 
         return response()->json($orden, 201);
+    }
+
+    public function estimar(Request $request)
+    {
+        $datos = $request->validate([
+            'monto' => 'required|numeric|min:0.01',
+            'vehiculo_id' => 'required|exists:vehiculos,id',
+            'ciudad' => 'required|in:tegucigalpa,san_pedro_sula',
+            'combustible' => 'nullable|in:regular,super,diesel',
+        ]);
+
+        $vehiculo = Vehiculo::findOrFail($datos['vehiculo_id']);
+        $combustible = $vehiculo->tipo_combustible === 'diesel'
+            ? 'diesel'
+            : ($datos['combustible'] ?? 'regular');
+        $precio = Combustible::precioVigente($combustible, $datos['ciudad']);
+
+        abort_unless($precio, 422, 'No hay un precio vigente para ese combustible y ciudad.');
+
+        $galones = (float) $datos['monto'] / (float) $precio->precio;
+        $litros = $galones * 3.785411784;
+        $kilometros = $litros * (float) $vehiculo->rendimiento_km_litro;
+
+        return response()->json([
+            'monto_autorizado' => round((float) $datos['monto'], 2),
+            'combustible' => $combustible,
+            'ciudad' => $datos['ciudad'],
+            'precio_por_galon' => (float) $precio->precio,
+            'vigente_desde' => $precio->vigente_desde?->toDateString(),
+            'galones_aproximados' => round($galones, 2),
+            'litros_aproximados' => round($litros, 2),
+            'rendimiento_km_litro' => (float) $vehiculo->rendimiento_km_litro,
+            'kilometros_aproximados' => round($kilometros, 2),
+        ]);
     }
 
     // El administrador puede dar una nueva oportunidad a una orden vencida.
