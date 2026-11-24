@@ -53,6 +53,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('caja-chica', CajaChicaController::class)->only(['index', 'show']);
         Route::get('reportes/por-conductor', [ReporteController::class, 'porConductor']);
         Route::get('reportes/por-gasolinera', [ReporteController::class, 'porGasolinera']);
+        Route::get('reportes/resumen', [ReporteController::class, 'resumen']);
+        Route::get('reportes/conductor/{id}', [ReporteController::class, 'detalleConductor']);
+        Route::get('reportes/gasolinera/{id}', [ReporteController::class, 'detalleGasolinera']);
     });
 
     // --- Solo administrador: crear, editar, desactivar y asignar montos ---
