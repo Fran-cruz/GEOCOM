@@ -33,4 +33,15 @@ class Combustible extends Model
             ->where('ciudad', $ciudad)
             ->first();
     }
+
+    // Precio que regía en una fecha: la última semana publicada en o antes de ese día.
+    // Si la fecha es anterior al primer registro, usa la semana más antigua disponible.
+    public static function precioEn(string $combustible, string $ciudad, $fecha): ?self
+    {
+        $dia = \Illuminate\Support\Carbon::parse($fecha)->toDateString();
+        $base = static::query()->where('combustible', $combustible)->where('ciudad', $ciudad);
+
+        return (clone $base)->whereDate('vigente_desde', '<=', $dia)->orderByDesc('vigente_desde')->first()
+            ?? (clone $base)->orderBy('vigente_desde')->first();
+    }
 }

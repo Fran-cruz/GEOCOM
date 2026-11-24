@@ -4,11 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\{DetalleOrden, Evidencia, Gasolinera, Orden, Solicitud};
-use App\Models\{Combustible, Vehiculo};
+use App\Models\Vehiculo;
 use App\Notifications\{OrdenAsignada, OrdenCompletada};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Support\EstimadorCombustible;
 
 class OrdenController extends Controller
 {
@@ -75,14 +76,30 @@ class OrdenController extends Controller
             ]);
 
             foreach ($datos['detalles'] as $linea) {
+                $vehiculo = ($linea['vehiculo_id'] ?? null) ? Vehiculo::find($linea['vehiculo_id']) : null;
+
+                // Vehículo: el combustible que tiene registrado (diésel por defecto). MGP: gasolina.
+                $tipo = $linea['tipo_destino'] === 'vehiculo'
+                    ? ($vehiculo?->tipo_combustible ?: 'diesel')
+                    : 'gasolina';
+
+                // Foto del precio de esta semana; si aún no hay precios, la orden se crea igual
+                $estimacion = EstimadorCombustible::calcular(
+                    (float) $linea['monto'],
+                    EstimadorCombustible::clavePrecio($tipo),
+                    $vehiculo
+                ) ?? [];
+
                 $orden->detalles()->create([
                     'tipo_destino'     => $linea['tipo_destino'],
                     'vehiculo_id'      => $linea['vehiculo_id'] ?? null,
                     'descripcion_mgp'  => $linea['descripcion_mgp'] ?? null,
-                    // Regla del negocio: vehículos con diésel, MGP con gasolina
-                    'tipo_combustible' => $linea['tipo_destino'] === 'vehiculo' ? 'diesel' : 'gasolina',
+                    'tipo_combustible' => $tipo,
                     'monto'            => $linea['monto'],
-                ]);
+                ] + array_intersect_key($estimacion, array_flip([
+                    'combustible_precio', 'ciudad_precio', 'precio_galon',
+                    'precio_vigente_desde', 'galones_estimados', 'km_estimados',
+                ])));
             }
 
             $solicitud->update(['estado' => 'aprobada']);
@@ -97,41 +114,39 @@ class OrdenController extends Controller
         return response()->json($orden, 201);
     }
 
+    // Vista previa al asignar: cuánto combustible y kilómetros alcanzan con el monto.
+    // Para vehículo manda vehiculo_id; para MGP manda solo tipo_combustible (gasolina).
     public function estimar(Request $request)
     {
         $datos = $request->validate([
-            'monto' => 'required|numeric|min:0.01',
-            'vehiculo_id' => 'required|exists:vehiculos,id',
-            'ciudad' => 'required|in:tegucigalpa,san_pedro_sula',
-            'combustible' => 'nullable|in:regular,super,diesel',
+            'monto'            => 'required|numeric|min:0.01',
+            'vehiculo_id'      => 'nullable|required_without:tipo_combustible|exists:vehiculos,id',
+            'tipo_combustible' => 'nullable|in:diesel,gasolina',
+            'ciudad'           => 'nullable|in:tegucigalpa,san_pedro_sula',
+            'combustible'      => 'nullable|in:regular,super,diesel',
         ]);
 
-        $vehiculo = Vehiculo::findOrFail($datos['vehiculo_id']);
-        $combustible = $vehiculo->tipo_combustible === 'diesel'
-            ? 'diesel'
-            : ($datos['combustible'] ?? 'regular');
-        $precio = Combustible::precioVigente($combustible, $datos['ciudad']);
+        $vehiculo = ($datos['vehiculo_id'] ?? null) ? Vehiculo::findOrFail($datos['vehiculo_id']) : null;
+        $tipo = $vehiculo?->tipo_combustible ?: ($datos['tipo_combustible'] ?? 'gasolina');
+        $clave = EstimadorCombustible::clavePrecio($tipo, $datos['combustible'] ?? null);
 
-        abort_unless($precio, 422, 'No hay un precio vigente para ese combustible y ciudad.');
+        $estimacion = EstimadorCombustible::calcular((float) $datos['monto'], $clave, $vehiculo, $datos['ciudad'] ?? null);
 
-        $galones = (float) $datos['monto'] / (float) $precio->precio;
-        $litros = $galones * 3.785411784;
-        $kilometros = $litros * (float) $vehiculo->rendimiento_km_litro;
+        abort_unless($estimacion, 422, 'No hay un precio vigente para ese combustible y ciudad.');
 
         return response()->json([
-            'monto_autorizado' => round((float) $datos['monto'], 2),
-            'combustible' => $combustible,
-            'ciudad' => $datos['ciudad'],
-            'precio_por_galon' => (float) $precio->precio,
-            'vigente_desde' => $precio->vigente_desde?->toDateString(),
-            'galones_aproximados' => round($galones, 2),
-            'litros_aproximados' => round($litros, 2),
-            'rendimiento_km_litro' => (float) $vehiculo->rendimiento_km_litro,
-            'kilometros_aproximados' => round($kilometros, 2),
+            'monto_autorizado'       => round((float) $datos['monto'], 2),
+            'combustible'            => $estimacion['combustible_precio'],
+            'ciudad'                 => $estimacion['ciudad_precio'],
+            'precio_por_galon'       => $estimacion['precio_galon'],
+            'vigente_desde'          => $estimacion['precio_vigente_desde'],
+            'galones_aproximados'    => $estimacion['galones_estimados'],
+            'litros_aproximados'     => $estimacion['litros_estimados'],
+            'rendimiento_km_litro'   => $estimacion['rendimiento_km_litro'],
+            'kilometros_aproximados' => $estimacion['km_estimados'],
         ]);
     }
 
-    // El administrador puede dar una nueva oportunidad a una orden vencida.
     public function rehabilitar(Request $request, string $id)
     {
         $datos = $request->validate([

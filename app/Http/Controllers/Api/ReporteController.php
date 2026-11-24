@@ -85,6 +85,7 @@ class ReporteController extends Controller
                 fn ($linea) => $linea->orden->gasolinera_id,
                 fn ($linea) => $linea->orden->gasolinera->nombre
             ),
+            'por_vehiculo' => $this->porVehiculo($lineas),
             'ordenes' => $this->listaOrdenes($lineas),
         ];
     }
@@ -179,7 +180,7 @@ class ReporteController extends Controller
             'cumplimiento_pct' => $solicitadas
                 ? round((($cantidad - $tarde) / $solicitadas) * 100, 1)
                 : 0,
-        ];
+        ] + $this->consumo($lineas);
     }
 
     // Serie mensual para la gráfica de barras.
@@ -191,7 +192,7 @@ class ReporteController extends Controller
                 'mes' => $mes,
                 'monto_total' => round((float) $grupo->sum('monto'), 2),
                 'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ])
+            ] + $this->consumo($grupo))
             ->sortKeys()
             ->values()
             ->all();
@@ -205,7 +206,7 @@ class ReporteController extends Controller
                 'tipo_combustible' => $tipo,
                 'monto_total' => round((float) $grupo->sum('monto'), 2),
                 'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ])
+            ] + $this->consumo($grupo))
             ->values()
             ->all();
     }
@@ -220,7 +221,7 @@ class ReporteController extends Controller
                 'nombre' => $nombre($grupo->first()),
                 'monto_total' => round((float) $grupo->sum('monto'), 2),
                 'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ])
+            ] + $this->consumo($grupo))
             ->sortByDesc('monto_total')
             ->values()
             ->all();
@@ -242,7 +243,46 @@ class ReporteController extends Controller
                     : ($linea->descripcion_mgp ?: 'MGP'),
                 'tipo_combustible' => $linea->tipo_combustible,
                 'monto' => (float) $linea->monto,
+                'precio_galon' => $linea->precio_galon !== null ? (float) $linea->precio_galon : null,
+                'galones_estimados' => $linea->galones_estimados !== null ? (float) $linea->galones_estimados : null,
+                'km_estimados' => $linea->km_estimados !== null ? (float) $linea->km_estimados : null,
             ])
+            ->values()
+            ->all();
+    }
+
+    // Galones y km estimados con el precio guardado en cada línea al asignar la orden.
+    // Las líneas sin precio (antes de tener scraper) no cuentan para el promedio.
+    private function consumo($lineas): array
+    {
+        $conPrecio = $lineas->filter(fn ($linea) => $linea->galones_estimados !== null);
+        $galones = (float) $conPrecio->sum('galones_estimados');
+
+        return [
+            'galones_total' => round($galones, 2),
+            'km_total' => round((float) $conPrecio->sum('km_estimados'), 2),
+            'precio_promedio_galon' => $galones > 0
+                ? round((float) $conPrecio->sum('monto') / $galones, 2)
+                : null,
+        ];
+    }
+
+    // Gasto, galones y km por vehículo (solo líneas de vehículo, no MGP).
+    private function porVehiculo($lineas): array
+    {
+        return $lineas
+            ->where('tipo_destino', 'vehiculo')
+            ->filter(fn ($linea) => $linea->vehiculo_id !== null)
+            ->groupBy('vehiculo_id')
+            ->map(fn ($grupo, $id) => [
+                'id' => (int) $id,
+                'placa' => $grupo->first()->vehiculo?->placa ?? 'Vehículo',
+                'descripcion' => trim(($grupo->first()->vehiculo?->marca ?? '') . ' ' . ($grupo->first()->vehiculo?->modelo ?? '')),
+                'rendimiento_km_litro' => $grupo->first()->vehiculo ? (float) $grupo->first()->vehiculo->rendimiento_km_litro : null,
+                'monto_total' => round((float) $grupo->sum('monto'), 2),
+                'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
+            ] + $this->consumo($grupo))
+            ->sortByDesc('monto_total')
             ->values()
             ->all();
     }

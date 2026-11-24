@@ -38,6 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // --- Todos los roles (el controlador filtra según quién consulta) ---
     Route::get('vehiculos', [VehiculoController::class, 'index']);
     Route::get('combustibles', [CombustibleController::class, 'index']);
+    Route::get('combustibles/historial', [CombustibleController::class, 'historial']);
     Route::get('solicitudes', [SolicitudController::class, 'index']);
     Route::get('solicitudes/{id}', [SolicitudController::class, 'show']);
     Route::get('ordenes', [OrdenController::class, 'index']);
