@@ -15,7 +15,7 @@ class VehiculoWebController extends Controller
     public function index()
     {
         return Inertia::render('Vehiculos/Index', [
-            'vehiculos' => Vehiculo::orderBy('placa')->paginate(15),
+            'vehiculos' => Vehiculo::orderBy('placa')->paginate(30),
         ]);
     }
 
@@ -27,6 +27,7 @@ class VehiculoWebController extends Controller
             'modelo' => ['required', 'string', 'max:80'],
             'anio' => ['nullable', 'integer', 'between:1980,2100'],
             'tipo_combustible' => ['sometimes', 'in:diesel,gasolina'],
+            'rendimiento_km_litro' => ['required', 'numeric', 'between:0.01,99.99'],
         ], [
             'placa.required' => 'La placa es obligatoria.',
             'placa.unique' => 'La placa ya está registrada.',
@@ -34,6 +35,8 @@ class VehiculoWebController extends Controller
             'modelo.required' => 'El modelo es obligatorio.',
             'anio.between' => 'El año debe estar entre 1980 y 2100.',
             'tipo_combustible.in' => 'El combustible debe ser diésel o gasolina.',
+            'rendimiento_km_litro.required' => 'El rendimiento del vehículo es obligatorio.',
+            'rendimiento_km_litro.between' => 'El rendimiento debe estar entre 0.01 y 99.99 km/litro.',
         ]);
 
         Vehiculo::create($datos);
@@ -50,11 +53,13 @@ class VehiculoWebController extends Controller
             'modelo' => ['sometimes', 'required', 'string', 'max:80'],
             'anio' => ['nullable', 'integer', 'between:1980,2100'],
             'tipo_combustible' => ['sometimes', 'in:diesel,gasolina'],
+            'rendimiento_km_litro' => ['sometimes', 'numeric', 'between:0.01,99.99'],
             'activo' => ['sometimes', 'boolean'],
         ], [
             'placa.unique' => 'La placa ya está registrada.',
             'anio.between' => 'El año debe estar entre 1980 y 2100.',
             'tipo_combustible.in' => 'El combustible debe ser diésel o gasolina.',
+            'rendimiento_km_litro.between' => 'El rendimiento debe estar entre 0.01 y 99.99 km/litro.',
         ]);
 
         $vehiculo->update($datos);

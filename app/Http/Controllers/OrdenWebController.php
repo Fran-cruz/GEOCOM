@@ -20,11 +20,21 @@ class OrdenWebController extends Controller
 {
     use ValidatesWebRequests;
 
+    private const ESTADOS_ORDEN = [
+        'pendiente',
+        'abierta',
+        'abierta_tarde',
+        'completada',
+        'completada_tarde',
+        'vencida',
+        'cancelada',
+    ];
+
     public function index(Request $request)
     {
         Orden::marcarVencidas();
         $filtros = $this->validateWeb($request, [
-            'estado' => ['nullable', 'in:pendiente,abierta,completada,vencida,abierta_tarde,completada_tarde'],
+            'estado' => ['nullable', 'in:'.implode(',', self::ESTADOS_ORDEN)],
             'conductor_id' => ['nullable', 'exists:conductores,id'],
             'gasolinera_id' => ['nullable', 'exists:gasolineras,id'],
             'desde' => ['nullable', 'date'],
@@ -38,8 +48,7 @@ class OrdenWebController extends Controller
             'hasta.after_or_equal' => 'La fecha final debe ser igual o posterior a la inicial.',
         ]);
 
-        return Inertia::render('Ordenes/Index', [
-            'ordenes' => Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo', 'detalles.evidencias'])
+        $ordenes = Orden::with(['conductor.usuario:id,name', 'gasolinera', 'detalles.vehiculo', 'detalles.evidencias'])
                 ->when($filtros['estado'] ?? null, fn ($query, $value) => $query->where('estado', $value))
                 ->when($filtros['conductor_id'] ?? null, fn ($query, $value) => $query->where('conductor_id', $value))
                 ->when($filtros['gasolinera_id'] ?? null, fn ($query, $value) => $query->where('gasolinera_id', $value))
@@ -47,7 +56,11 @@ class OrdenWebController extends Controller
                 ->when($filtros['hasta'] ?? null, fn ($query, $value) => $query->whereDate('fecha_asignacion', '<=', $value))
                 ->latest('fecha_asignacion')
                 ->paginate(15)
-                ->withQueryString(),
+                ->withQueryString()
+                ->through(fn (Orden $orden) => $this->serializarOrden($orden));
+
+        return Inertia::render('Ordenes/Index', [
+            'ordenes' => $ordenes,
             'filtros' => $filtros,
             'conductores' => \App\Models\Conductor::with('usuario:id,name')->where('activo', true)->orderBy('id')->get(),
             'gasolineras' => Gasolinera::where('activo', true)->orderBy('nombre')->get(),
@@ -142,7 +155,7 @@ class OrdenWebController extends Controller
             'detalles.evidencias',
         ])->findOrFail($id);
 
-        return Inertia::render('Ordenes/Show', ['orden' => $orden]);
+        return Inertia::render('Ordenes/Show', ['orden' => $this->serializarOrden($orden)]);
     }
 
     public function verEvidencia(string $id)
@@ -154,5 +167,20 @@ class OrdenWebController extends Controller
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    private function serializarOrden(Orden $orden): array
+    {
+        $datos = $orden->toArray();
+
+        foreach ($datos['detalles'] as &$detalle) {
+            foreach ($detalle['evidencias'] as &$evidencia) {
+                $evidencia['url'] = route('web.evidencias.ver', ['id' => $evidencia['id']]);
+            }
+            unset($evidencia);
+        }
+        unset($detalle);
+
+        return $datos;
     }
 }

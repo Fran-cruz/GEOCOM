@@ -15,7 +15,7 @@ class GasolineraWebController extends Controller
     public function index()
     {
         return Inertia::render('Gasolineras/Index', [
-            'gasolineras' => Gasolinera::orderBy('nombre')->paginate(15),
+            'gasolineras' => Gasolinera::orderBy('nombre')->paginate(30),
         ]);
     }
 

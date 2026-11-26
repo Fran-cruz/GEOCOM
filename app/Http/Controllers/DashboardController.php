@@ -10,6 +10,18 @@ use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
+    private const ESTADOS_ORDEN = [
+        'pendiente',
+        'abierta',
+        'abierta_tarde',
+        'completada',
+        'completada_tarde',
+        'vencida',
+        'cancelada',
+    ];
+
+    private const ESTADOS_EJECUTADOS = ['completada', 'completada_tarde'];
+
     public function index()
     {
         Orden::marcarVencidas();
@@ -20,14 +32,14 @@ class DashboardController extends Controller
             ->pluck('cantidad', 'estado')
             ->map(fn ($cantidad) => (int) $cantidad)
             ->all();
-        $ordenesPorEstado = array_replace(array_fill_keys(Orden::ESTADOS, 0), $ordenesPorEstado);
+        $ordenesPorEstado = array_replace(array_fill_keys(self::ESTADOS_ORDEN, 0), $ordenesPorEstado);
         $ordenesEjecutadas = array_sum(array_intersect_key(
             $ordenesPorEstado,
-            array_flip(Orden::ESTADOS_EJECUTADOS)
+            array_flip(self::ESTADOS_EJECUTADOS)
         ));
         $gastoEjecutado = (float) DB::table('detalle_ordenes')
             ->join('ordenes', 'ordenes.id', '=', 'detalle_ordenes.orden_id')
-            ->whereIn('ordenes.estado', Orden::ESTADOS_EJECUTADOS)
+            ->whereIn('ordenes.estado', self::ESTADOS_EJECUTADOS)
             ->sum('detalle_ordenes.monto');
 
         return Inertia::render('Dashboard/Index', [
