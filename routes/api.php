@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('reportes/por-conductor', [ReporteController::class, 'porConductor']);
         Route::get('reportes/por-gasolinera', [ReporteController::class, 'porGasolinera']);
         Route::get('reportes/resumen', [ReporteController::class, 'resumen']);
+        Route::get('reportes/exportar', [ReporteController::class, 'exportar']);
         Route::get('reportes/conductor/{id}', [ReporteController::class, 'detalleConductor']);
         Route::get('reportes/gasolinera/{id}', [ReporteController::class, 'detalleGasolinera']);
     });

@@ -7,8 +7,10 @@ use App\Models\Conductor;
 use App\Models\DetalleOrden;
 use App\Models\Gasolinera;
 use App\Models\Orden;
+use App\Services\ReporteExcel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ReporteController extends Controller
 {
@@ -42,23 +44,47 @@ class ReporteController extends Controller
     // Resumen general del periodo: indicadores, serie por mes y rankings.
     public function resumen(Request $request)
     {
-        $lineas = $this->lineas($request);
+        return $this->armarResumen($request);
+    }
 
-        return [
-            'resumen' => $this->indicadores($lineas, $this->contarVencidas($request)),
-            'por_mes' => $this->porMes($lineas),
-            'por_combustible' => $this->porCombustible($lineas),
-            'top_conductores' => $this->ranking(
-                $lineas,
-                fn ($linea) => $linea->orden->conductor_id,
-                fn ($linea) => $linea->orden->conductor->usuario->name
-            ),
-            'top_gasolineras' => $this->ranking(
-                $lineas,
-                fn ($linea) => $linea->orden->gasolinera_id,
-                fn ($linea) => $linea->orden->gasolinera->nombre
-            ),
-        ];
+    // Descarga el reporte en Excel. Reutiliza los mismos datos que los endpoints
+    // de resumen y detalle, así el Excel siempre coincide con lo que muestra la app.
+    // Filtros: ?tipo=resumen|conductor|gasolinera&id=&desde=&hasta=&conductor_id=&gasolinera_id=
+    public function exportar(Request $request, ReporteExcel $excel)
+    {
+        $request->validate([
+            'tipo' => 'required|in:resumen,conductor,gasolinera',
+            'id' => 'required_if:tipo,conductor,gasolinera|nullable|integer|min:1',
+            'desde' => 'nullable|date',
+            'hasta' => 'nullable|date|after_or_equal:desde',
+            'conductor_id' => 'nullable|integer|min:1',
+            'gasolinera_id' => 'nullable|integer|min:1',
+        ]);
+
+        $tipo = $request->input('tipo');
+
+        // findOrFail dentro de los detalles responde 404 si el id no existe
+        $datos = match ($tipo) {
+            'conductor' => $this->detalleConductor($request, $request->integer('id')),
+            'gasolinera' => $this->detalleGasolinera($request, $request->integer('id')),
+            default => $this->armarResumen($request, true),
+        };
+
+        $libro = $excel->generar($tipo, $datos, $request->only(['desde', 'hasta', 'conductor_id', 'gasolinera_id']));
+
+        $nombre = sprintf(
+            'reporte_%s_%s_%s.xlsx',
+            $tipo,
+            $request->filled('desde') ? Carbon::parse($request->input('desde'))->toDateString() : 'inicio',
+            $request->filled('hasta') ? Carbon::parse($request->input('hasta'))->toDateString() : Carbon::today()->toDateString()
+        );
+
+        return response()->streamDownload(function () use ($libro) {
+            (new Xlsx($libro))->save('php://output');
+            $libro->disconnectWorksheets();
+        }, $nombre, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     // Reporte completo de un conductor.
@@ -118,6 +144,34 @@ class ReporteController extends Controller
         ];
     }
 
+    // Datos del resumen general. Con $conOrdenes agrega una fila por línea (para el Excel).
+    private function armarResumen(Request $request, bool $conOrdenes = false): array
+    {
+        $lineas = $this->lineas($request);
+
+        $datos = [
+            'resumen' => $this->indicadores($lineas, $this->contarVencidas($request)),
+            'por_mes' => $this->porMes($lineas),
+            'por_combustible' => $this->porCombustible($lineas),
+            'top_conductores' => $this->ranking(
+                $lineas,
+                fn ($linea) => $linea->orden->conductor_id,
+                fn ($linea) => $linea->orden->conductor->usuario->name
+            ),
+            'top_gasolineras' => $this->ranking(
+                $lineas,
+                fn ($linea) => $linea->orden->gasolinera_id,
+                fn ($linea) => $linea->orden->gasolinera->nombre
+            ),
+        ];
+
+        if ($conOrdenes) {
+            $datos['ordenes'] = $this->listaOrdenes($lineas);
+        }
+
+        return $datos;
+    }
+
     // Consultas agrupadas de los endpoints existentes.
     // Solo incluye órdenes completadas, usando la fecha de cierre.
     private function base(Request $request)
@@ -172,15 +226,15 @@ class ReporteController extends Controller
         $solicitadas = $cantidad + $vencidas;
 
         return [
-            'monto_total' => round($total, 2),
-            'cantidad_ordenes' => $cantidad,
-            'promedio_orden' => $cantidad ? round($total / $cantidad, 2) : 0,
-            'completadas_tarde' => $tarde,
-            'vencidas' => $vencidas,
-            'cumplimiento_pct' => $solicitadas
-                ? round((($cantidad - $tarde) / $solicitadas) * 100, 1)
-                : 0,
-        ] + $this->consumo($lineas);
+                'monto_total' => round($total, 2),
+                'cantidad_ordenes' => $cantidad,
+                'promedio_orden' => $cantidad ? round($total / $cantidad, 2) : 0,
+                'completadas_tarde' => $tarde,
+                'vencidas' => $vencidas,
+                'cumplimiento_pct' => $solicitadas
+                    ? round((($cantidad - $tarde) / $solicitadas) * 100, 1)
+                    : 0,
+            ] + $this->consumo($lineas);
     }
 
     // Serie mensual para la gráfica de barras.
@@ -189,10 +243,10 @@ class ReporteController extends Controller
         return $lineas
             ->groupBy(fn ($linea) => Carbon::parse($linea->orden->fecha_completada)->format('Y-m'))
             ->map(fn ($grupo, $mes) => [
-                'mes' => $mes,
-                'monto_total' => round((float) $grupo->sum('monto'), 2),
-                'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ] + $this->consumo($grupo))
+                    'mes' => $mes,
+                    'monto_total' => round((float) $grupo->sum('monto'), 2),
+                    'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
+                ] + $this->consumo($grupo))
             ->sortKeys()
             ->values()
             ->all();
@@ -203,10 +257,10 @@ class ReporteController extends Controller
         return $lineas
             ->groupBy('tipo_combustible')
             ->map(fn ($grupo, $tipo) => [
-                'tipo_combustible' => $tipo,
-                'monto_total' => round((float) $grupo->sum('monto'), 2),
-                'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ] + $this->consumo($grupo))
+                    'tipo_combustible' => $tipo,
+                    'monto_total' => round((float) $grupo->sum('monto'), 2),
+                    'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
+                ] + $this->consumo($grupo))
             ->values()
             ->all();
     }
@@ -217,11 +271,11 @@ class ReporteController extends Controller
         return $lineas
             ->groupBy($id)
             ->map(fn ($grupo, $key) => [
-                'id' => (int) $key,
-                'nombre' => $nombre($grupo->first()),
-                'monto_total' => round((float) $grupo->sum('monto'), 2),
-                'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ] + $this->consumo($grupo))
+                    'id' => (int) $key,
+                    'nombre' => $nombre($grupo->first()),
+                    'monto_total' => round((float) $grupo->sum('monto'), 2),
+                    'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
+                ] + $this->consumo($grupo))
             ->sortByDesc('monto_total')
             ->values()
             ->all();
@@ -275,13 +329,13 @@ class ReporteController extends Controller
             ->filter(fn ($linea) => $linea->vehiculo_id !== null)
             ->groupBy('vehiculo_id')
             ->map(fn ($grupo, $id) => [
-                'id' => (int) $id,
-                'placa' => $grupo->first()->vehiculo?->placa ?? 'Vehículo',
-                'descripcion' => trim(($grupo->first()->vehiculo?->marca ?? '') . ' ' . ($grupo->first()->vehiculo?->modelo ?? '')),
-                'rendimiento_km_litro' => $grupo->first()->vehiculo ? (float) $grupo->first()->vehiculo->rendimiento_km_litro : null,
-                'monto_total' => round((float) $grupo->sum('monto'), 2),
-                'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
-            ] + $this->consumo($grupo))
+                    'id' => (int) $id,
+                    'placa' => $grupo->first()->vehiculo?->placa ?? 'Vehículo',
+                    'descripcion' => trim(($grupo->first()->vehiculo?->marca ?? '') . ' ' . ($grupo->first()->vehiculo?->modelo ?? '')),
+                    'rendimiento_km_litro' => $grupo->first()->vehiculo ? (float) $grupo->first()->vehiculo->rendimiento_km_litro : null,
+                    'monto_total' => round((float) $grupo->sum('monto'), 2),
+                    'cantidad_ordenes' => $grupo->pluck('orden_id')->unique()->count(),
+                ] + $this->consumo($grupo))
             ->sortByDesc('monto_total')
             ->values()
             ->all();
