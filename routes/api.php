@@ -37,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Todos los roles (el controlador filtra según quién consulta) ---
     Route::get('vehiculos', [VehiculoController::class, 'index']);
+    Route::get('vehiculos/{id}/foto', [VehiculoController::class, 'verFoto'])->name('vehiculos.foto');
     Route::get('combustibles', [CombustibleController::class, 'index']);
     Route::get('combustibles/historial', [CombustibleController::class, 'historial']);
     Route::get('solicitudes', [SolicitudController::class, 'index']);
@@ -63,6 +64,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('can:admin')->group(function () {
         Route::apiResource('conductores', ConductorController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('vehiculos', VehiculoController::class)->only(['store', 'update', 'destroy']);
+        Route::post('vehiculos/{id}/foto', [VehiculoController::class, 'subirFoto']);
+        Route::delete('vehiculos/{id}/foto', [VehiculoController::class, 'quitarFoto']);
         Route::apiResource('gasolineras', GasolineraController::class)->only(['store', 'update', 'destroy']);
         Route::post('caja-chica', [CajaChicaController::class, 'store']);
         Route::post('ordenes', [OrdenController::class, 'store']); // asignar montos y generar la orden
