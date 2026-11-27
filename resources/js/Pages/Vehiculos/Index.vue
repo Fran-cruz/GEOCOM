@@ -222,6 +222,7 @@ const deleteVehiculo = (vehiculo) => {
                                 <th scope="col" class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Modelo</th>
                                 <th scope="col" class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Año</th>
                                 <th scope="col" class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Combustible</th>
+                                <th scope="col" class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Rendimiento (km/L)</th>
                                 <th scope="col" class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">Estado</th>
                                 <th v-if="$page.props.can_operate" scope="col" class="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">Acciones</th>
                             </tr>
@@ -234,6 +235,9 @@ const deleteVehiculo = (vehiculo) => {
                                 <td class="whitespace-nowrap px-5 py-4 text-sm text-slate-600">{{ vehiculo.anio || '—' }}</td>
                                 <td class="whitespace-nowrap px-5 py-4 text-sm text-slate-600">
                                     {{ vehiculo.tipo_combustible === 'diesel' ? 'Diésel' : (vehiculo.tipo_combustible === 'gasolina' ? 'Gasolina' : '—') }}
+                                </td>
+                                <td class="whitespace-nowrap px-5 py-4 text-sm text-slate-600">
+                                    {{ vehiculo.rendimiento_km_litro ? `${Number(vehiculo.rendimiento_km_litro).toFixed(2)} km/L` : '—' }}
                                 </td>
                                 <td class="whitespace-nowrap px-5 py-4">
                                     <StatusBadge :status="vehiculo.activo ? 'Activo' : 'Inactivo'" />
@@ -258,7 +262,7 @@ const deleteVehiculo = (vehiculo) => {
                                 </td>
                             </tr>
                             <tr v-if="vehiculos.data.length === 0">
-                                <td :colspan="$page.props.can_operate ? 7 : 6" class="px-5 py-10 text-center text-sm text-slate-500">
+                                <td :colspan="$page.props.can_operate ? 8 : 7" class="px-5 py-10 text-center text-sm text-slate-500">
                                     No hay vehículos registrados.
                                 </td>
                             </tr>
