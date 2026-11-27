@@ -30,26 +30,6 @@ function submit() {
                 <div class="brand-panel__decoration brand-panel__decoration--two"></div>
 
                 <div class="brand-panel__content">
-                    <a class="brand" href="/login" aria-label="GESTCOM, inicio">
-                        <span class="brand__symbol" aria-hidden="true">
-                            <svg viewBox="0 0 40 40" fill="none">
-                                <path
-                                    d="M20 5.5 33 12.75v14.5L20 34.5 7 27.25v-14.5L20 5.5Z"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                />
-                                <path
-                                    d="M25.7 16.3a7.5 7.5 0 1 0 .1 7.4M20 20h8"
-                                    stroke="currentColor"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2.5"
-                                />
-                            </svg>
-                        </span>
-                        <span class="brand__name">GESTCOM</span>
-                    </a>
-
                     <div class="brand-panel__message">
                         <span class="eyebrow">PORTAL INSTITUCIONAL</span>
                         <h1>La gestión de tu equipo, en un solo lugar.</h1>
@@ -86,9 +66,12 @@ function submit() {
 
             <section class="form-panel" aria-labelledby="login-title">
                 <div class="form-panel__inner">
-                    <div class="mobile-brand" aria-label="GESTCOM">
-                        <span class="mobile-brand__symbol" aria-hidden="true">G</span>
-                        <span>GESTCOM</span>
+                    <div class="login-brand">
+                        <img
+                            src="/images/logo-gestcom.png"
+                            alt="GESTCOM"
+                            class="login-brand__logo"
+                        >
                     </div>
 
                     <div class="form-heading">
@@ -383,34 +366,6 @@ function submit() {
     flex-direction: column;
 }
 
-.brand {
-    display: inline-flex;
-    width: fit-content;
-    align-items: center;
-    gap: 12px;
-    color: var(--blanco);
-    text-decoration: none;
-}
-
-.brand__symbol {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    place-items: center;
-    color: var(--marca_claro);
-}
-
-.brand__symbol svg {
-    width: 100%;
-    height: 100%;
-}
-
-.brand__name {
-    font-size: 19px;
-    font-weight: 750;
-    letter-spacing: 0.13em;
-}
-
 .brand-panel__message {
     max-width: 390px;
     margin-top: auto;
@@ -499,8 +454,19 @@ function submit() {
     margin: auto;
 }
 
-.mobile-brand {
-    display: none;
+.login-brand {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 28px;
+}
+
+.login-brand__logo {
+    display: block;
+    width: 116px;
+    height: 116px;
+    border-radius: 12px;
+    background: var(--blanco);
+    object-fit: contain;
 }
 
 .form-heading {
@@ -800,28 +766,8 @@ function submit() {
         padding: 34px clamp(24px, 8vw, 42px) 22px;
     }
 
-    .mobile-brand {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        margin-bottom: 42px;
-        color: var(--marca_oscuro);
-        font-size: 13px;
-        font-weight: 750;
-        letter-spacing: 0.12em;
-    }
-
-    .mobile-brand__symbol {
-        display: grid;
-        width: 32px;
-        height: 32px;
-        place-items: center;
-        border-radius: 10px;
-        background: var(--marca_claro);
-        color: var(--marca);
-        font-size: 17px;
-        font-weight: 750;
-        letter-spacing: 0;
+    .login-brand {
+        margin-bottom: 24px;
     }
 
     .form-heading h2 {
@@ -839,8 +785,9 @@ function submit() {
         padding-left: 22px;
     }
 
-    .mobile-brand {
-        margin-bottom: 32px;
+    .login-brand__logo {
+        width: 96px;
+        height: 96px;
     }
 
     .form-panel__footer {

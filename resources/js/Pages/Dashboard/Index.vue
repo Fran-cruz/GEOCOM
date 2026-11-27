@@ -25,10 +25,6 @@ const props = defineProps({
         type: Number,
         default: 0,
     },
-    totalCajaChica: {
-        type: Number,
-        default: 0,
-    },
     ultimasSolicitudes: {
         type: Array,
         default: () => [],
@@ -207,21 +203,6 @@ const getOrdenDestino = (orden) => {
                     <p class="mt-3 text-[11px] font-medium text-amber-700 group-hover:text-amber-800">Revisar solicitudes <span aria-hidden="true">→</span></p>
                 </Link>
 
-                <article class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-xs font-medium text-slate-500">Saldo en caja chica</p>
-                            <p class="mt-3 text-2xl font-bold tracking-tight text-slate-900">{{ formatCurrency(totalCajaChica) }}</p>
-                        </div>
-                        <span class="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600">
-                            <svg viewBox="0 0 20 20" fill="none" class="h-5 w-5" aria-hidden="true">
-                                <path d="M3 5.5h14v10H3v-10Zm0 2h14m-3 3h.01" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4" />
-                                <path d="M6 3.5h8" stroke="currentColor" stroke-linecap="round" stroke-width="1.4" />
-                            </svg>
-                        </span>
-                    </div>
-                    <p class="mt-3 text-[11px] text-slate-400">Total de movimientos registrados</p>
-                </article>
             </section>
 
             <section class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">

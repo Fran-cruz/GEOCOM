@@ -17,7 +17,6 @@ const navigation = [
     { label: 'Conductores', href: '/conductores', short: 'C' },
     { label: 'Vehículos', href: '/vehiculos', short: 'V' },
     { label: 'Gasolineras', href: '/gasolineras', short: 'G' },
-    { label: 'Caja Chica', href: '/caja-chica', short: 'CC' },
     { label: 'Reportes', href: '/reportes', short: 'R' },
 ];
 
@@ -71,16 +70,12 @@ watch(currentPath, closeMobileMenu);
                     aria-label="GESTCOM, ir al dashboard"
                     @click="closeMobileMenu"
                 >
-                    <span class="grid h-10 w-10 place-items-center text-[#EEE7FA]">
-                        <svg viewBox="0 0 40 40" fill="none" aria-hidden="true" class="h-full w-full">
-                            <path d="M20 5.5 33 12.75v14.5L20 34.5 7 27.25v-14.5L20 5.5Z" stroke="currentColor" stroke-width="2" />
-                            <path d="M25.7 16.3a7.5 7.5 0 1 0 .1 7.4M20 20h8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" />
-                        </svg>
-                    </span>
-                    <span>
-                        <span class="block text-sm font-bold tracking-[0.16em]">GESTCOM</span>
-                        <span class="mt-0.5 block text-[10px] tracking-wide text-white/50">Gestión institucional</span>
-                    </span>
+                    <img
+                        src="/images/logo-gestcom.png"
+                        alt="GESTCOM"
+                        class="h-14 w-14 shrink-0 rounded-xl bg-white object-contain p-1"
+                    >
+                    <span class="text-[10px] tracking-wide text-white/50">Gestión institucional</span>
                 </Link>
                 <button
                     type="button"
