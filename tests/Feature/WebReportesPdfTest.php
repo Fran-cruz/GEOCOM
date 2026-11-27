@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Conductor;
+use App\Models\Combustible;
 use App\Models\Gasolinera;
 use App\Models\Orden;
 use App\Models\Rol;
@@ -66,7 +67,10 @@ class WebReportesPdfTest extends TestCase
             ->where('ordenesPorEstado', $conteosEsperados)
             ->where('ordenesEjecutadas', $ordenesEjecutadasEsperadas)
             ->where('gastoEjecutado', $gastoEjecutadoEsperado)
-            ->where('gastoCompletado', $gastoEjecutadoEsperado));
+            ->where('gastoCompletado', $gastoEjecutadoEsperado)
+            ->has('preciosVigentes', 1)
+            ->has('historialPrecios.san_pedro_sula.semanas', 1)
+            ->has('historialPrecios.tegucigalpa.semanas', 0));
 
         $filters = [
             'desde' => now()->subDays(2)->toDateString(),
@@ -92,6 +96,14 @@ class WebReportesPdfTest extends TestCase
                 ])
                 ->where('resumen.ordenes_ejecutadas', 1)
                 ->where('resumen.monto_consumido', 250)
+                ->where('resumen.monto_total', 250)
+                ->where('resumen.cantidad_ordenes', 1)
+                ->where('resumen.galones_total', 5)
+                ->where('resumen.cumplidas_a_tiempo', 0)
+                ->where('resumen.completadas_tarde', 1)
+                ->where('resumen.vencidas', 0)
+                ->where('por_combustible.0.tipo_combustible', 'diesel')
+                ->where('top_conductores.0.id', $catalogos['conductor']->id)
                 ->where('export_pdf_url', route('web.reportes.pdf', $filters)));
     }
 
@@ -156,6 +168,16 @@ class WebReportesPdfTest extends TestCase
             'placa' => 'PDF-100',
             'marca' => 'GEOCOM',
             'modelo' => 'Prueba',
+            'rendimiento_km_litro' => 8,
+        ]);
+        Combustible::create([
+            'combustible' => 'diesel',
+            'ciudad' => 'san_pedro_sula',
+            'precio' => 50,
+            'variacion' => 0,
+            'vigente_desde' => now()->toDateString(),
+            'estado' => 'vigente',
+            'fuente' => 'test',
         ]);
         $gasolinera = Gasolinera::create([
             'nombre' => 'Estación de prueba',
@@ -204,6 +226,15 @@ class WebReportesPdfTest extends TestCase
                 'tipo_combustible' => 'diesel',
                 'monto' => $monto,
             ]);
+
+            if ($indice === 'completada_tarde') {
+                $orden->detalles()->create([
+                    'tipo_destino' => 'mgp',
+                    'descripcion_mgp' => 'Motor portátil',
+                    'tipo_combustible' => 'gasolina',
+                    'monto' => 90,
+                ]);
+            }
         }
 
         return $catalogos;

@@ -2,7 +2,6 @@
 
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\CajaChicaController;
 use App\Http\Controllers\Api\CombustibleController;
 use App\Http\Controllers\Api\ConductorController;
 use App\Http\Controllers\Api\EvidenciaController;
@@ -38,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // --- Todos los roles (el controlador filtra según quién consulta) ---
     Route::get('vehiculos', [VehiculoController::class, 'index']);
     Route::get('combustibles', [CombustibleController::class, 'index']);
+    Route::get('combustibles/historial', [CombustibleController::class, 'historial']);
     Route::get('solicitudes', [SolicitudController::class, 'index']);
     Route::get('solicitudes/{id}', [SolicitudController::class, 'show']);
     Route::get('ordenes', [OrdenController::class, 'index']);
@@ -50,7 +50,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('conductores', ConductorController::class)->only(['index', 'show']);
         Route::apiResource('vehiculos', VehiculoController::class)->only(['show']);
         Route::apiResource('gasolineras', GasolineraController::class)->only(['index', 'show']);
-        Route::apiResource('caja-chica', CajaChicaController::class)->only(['index', 'show']);
         Route::get('reportes/por-conductor', [ReporteController::class, 'porConductor']);
         Route::get('reportes/por-gasolinera', [ReporteController::class, 'porGasolinera']);
         Route::get('reportes/resumen', [ReporteController::class, 'resumen']);
@@ -63,7 +62,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('conductores', ConductorController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('vehiculos', VehiculoController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('gasolineras', GasolineraController::class)->only(['store', 'update', 'destroy']);
-        Route::post('caja-chica', [CajaChicaController::class, 'store']);
         Route::post('ordenes', [OrdenController::class, 'store']); // asignar montos y generar la orden
         Route::post('ordenes/estimar', [OrdenController::class, 'estimar']);
         Route::post('ordenes/{id}/rehabilitar', [OrdenController::class, 'rehabilitar']);

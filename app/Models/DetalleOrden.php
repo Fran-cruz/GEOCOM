@@ -10,8 +10,17 @@ class DetalleOrden extends Model
     protected $fillable = [
         'orden_id', 'tipo_destino', 'vehiculo_id', 'descripcion_mgp',
         'tipo_combustible', 'monto', 'ruta_evidencia', 'fecha_evidencia',
+        'combustible_precio', 'ciudad_precio', 'precio_galon', 'precio_vigente_desde',
+        'galones_estimados', 'km_estimados',
     ];
-    protected $casts = ['monto' => 'decimal:2', 'fecha_evidencia' => 'datetime'];
+    protected $casts = [
+        'monto' => 'decimal:2',
+        'fecha_evidencia' => 'datetime',
+        'precio_galon' => 'decimal:2',
+        'precio_vigente_desde' => 'date:Y-m-d',
+        'galones_estimados' => 'decimal:2',
+        'km_estimados' => 'decimal:2',
+    ];
 
     // Campos legacy (una sola foto por línea); ya no se usan, se ocultan al cliente
     protected $hidden = ['ruta_evidencia'];

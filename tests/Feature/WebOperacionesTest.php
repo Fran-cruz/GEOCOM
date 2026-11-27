@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Conductor;
+use App\Models\Combustible;
 use App\Models\Gasolinera;
 use App\Models\Evidencia;
 use App\Models\Orden;
@@ -41,7 +42,6 @@ class WebOperacionesTest extends TestCase
             '/conductores',
             '/vehiculos',
             '/gasolineras',
-            '/caja-chica',
             '/reportes',
         ] as $uri) {
             $this->get($uri)->assertOk();
@@ -106,6 +106,15 @@ class WebOperacionesTest extends TestCase
             'tipo_combustible' => 'diesel',
             'monto' => 100,
         ]);
+        Combustible::create([
+            'combustible' => 'diesel',
+            'ciudad' => 'san_pedro_sula',
+            'precio' => 50,
+            'variacion' => 0,
+            'vigente_desde' => now()->toDateString(),
+            'estado' => 'vigente',
+            'fuente' => 'test',
+        ]);
         $evidencia = Evidencia::create([
             'detalle_orden_id' => $detalle->id,
             'tipo' => 'bomba',
@@ -115,10 +124,15 @@ class WebOperacionesTest extends TestCase
         $this->get("/ordenes/{$orden->id}")
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Ordenes/Show', false)
-                ->where('orden.detalles.0.evidencias.0.url', route('web.evidencias.ver', $evidencia->id)));
+                ->where('orden.detalles.0.evidencias.0.url', route('web.evidencias.ver', $evidencia->id))
+                ->where('orden.detalles.0.combustible_precio', 'diesel')
+                ->where('orden.detalles.0.precio_galon', 50)
+                ->where('orden.detalles.0.galones_estimados', 2)
+                ->where('orden.detalles.0.litros_estimados', 7.57)
+                ->where('orden.detalles.0.km_estimados', 60.57));
     }
 
-    public function test_admin_can_reject_and_approve_solicitudes_create_orders_and_register_caja_chica(): void
+    public function test_admin_can_reject_solicitudes_and_create_orders(): void
     {
         $admin = $this->userWithRole('admin');
         $this->loginAs($admin);
@@ -159,19 +173,83 @@ class WebOperacionesTest extends TestCase
             'estado' => 'pendiente',
         ]);
 
-        $this->post('/caja-chica', [
-            'conductor_id' => $conductor->id,
-            'monto' => 300,
-            'descripcion' => 'Entrega operativa de prueba',
-            'fecha_entrega' => now()->toDateString(),
-        ])->assertRedirect()
-            ->assertSessionHas('success');
+    }
 
-        $this->assertDatabaseHas('caja_chica', [
+    public function test_caja_chica_routes_are_removed(): void
+    {
+        $this->get('/caja-chica')->assertNotFound();
+        $this->post('/caja-chica')->assertNotFound();
+        $this->getJson('/api/caja-chica')->assertNotFound();
+        $this->postJson('/api/caja-chica')->assertNotFound();
+    }
+
+    public function test_admin_can_estimate_fuel_using_the_api_calculation_and_default_city(): void
+    {
+        $this->loginAs($this->userWithRole('admin'));
+        $vehiculo = Vehiculo::create([
+            'placa' => 'EST-'.strtoupper(Str::random(5)),
+            'marca' => 'GEOCOM',
+            'modelo' => 'Prueba',
+            'tipo_combustible' => 'diesel',
+            'rendimiento_km_litro' => 10,
+        ]);
+        Combustible::create([
+            'combustible' => 'diesel',
+            'ciudad' => 'san_pedro_sula',
+            'precio' => 50,
+            'variacion' => 0,
+            'vigente_desde' => now()->toDateString(),
+            'estado' => 'vigente',
+            'fuente' => 'test',
+        ]);
+
+        $this->postJson('/ordenes/estimar', [
+            'monto' => 100,
+            'vehiculo_id' => $vehiculo->id,
+        ])->assertOk()
+            ->assertJsonPath('monto_autorizado', 100)
+            ->assertJsonPath('combustible', 'diesel')
+            ->assertJsonPath('ciudad', 'san_pedro_sula')
+            ->assertJsonPath('precio_por_galon', 50)
+            ->assertJsonPath('galones_aproximados', 2)
+            ->assertJsonPath('litros_aproximados', 7.57)
+            ->assertJsonPath('rendimiento_km_litro', 10)
+            ->assertJsonPath('kilometros_aproximados', 75.71);
+    }
+
+    public function test_admin_can_rehabilitate_expired_order_after_password_confirmation(): void
+    {
+        $admin = $this->userWithRole('admin');
+        $this->loginAs($admin);
+        [$conductor, $vehiculo, $gasolinera] = $this->createOperationalCatalog();
+        $solicitud = $this->createSolicitud($conductor, $vehiculo, 'Solicitud vencida');
+        $orden = Orden::create([
+            'numero_orden' => 'ORD-'.now()->format('Ymd').'-'.strtoupper(Str::random(5)),
+            'solicitud_id' => $solicitud->id,
             'conductor_id' => $conductor->id,
-            'registrado_por' => $admin->id,
-            'monto' => 300,
-            'descripcion' => 'Entrega operativa de prueba',
+            'gasolinera_id' => $gasolinera->id,
+            'asignado_por' => $admin->id,
+            'estado' => 'vencida',
+            'horas_vigencia' => 1,
+        ]);
+
+        $this->from("/ordenes/{$orden->id}")->post("/ordenes/{$orden->id}/rehabilitar", [
+            'horas_vigencia' => 2,
+            'password' => 'incorrecta',
+        ])->assertRedirect("/ordenes/{$orden->id}")
+            ->assertSessionHasErrors('password');
+
+        $this->from("/ordenes/{$orden->id}")->post("/ordenes/{$orden->id}/rehabilitar", [
+            'horas_vigencia' => 2,
+            'password' => self::PASSWORD,
+        ])->assertRedirect("/ordenes/{$orden->id}")
+            ->assertSessionHas('success', 'La orden fue rehabilitada correctamente.');
+
+        $this->assertDatabaseHas('ordenes', [
+            'id' => $orden->id,
+            'estado' => 'abierta_tarde',
+            'horas_vigencia' => 2,
+            'asignado_por' => $admin->id,
         ]);
     }
 
@@ -191,7 +269,6 @@ class WebOperacionesTest extends TestCase
             ['POST', '/gasolineras'],
             ['PUT', '/gasolineras/1'],
             ['DELETE', '/gasolineras/1'],
-            ['POST', '/caja-chica'],
         ] as [$method, $uri]) {
             $this->call($method, $uri)->assertForbidden();
         }

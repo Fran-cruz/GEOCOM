@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\CajaChicaWebController;
 use App\Http\Controllers\ConductorWebController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GasolineraWebController;
@@ -29,7 +28,6 @@ Route::middleware(['auth', 'can:web_consulta'])->group(function () {
     Route::get('/conductores', [ConductorWebController::class, 'index'])->name('web.conductores.index');
     Route::get('/vehiculos', [VehiculoWebController::class, 'index'])->name('web.vehiculos.index');
     Route::get('/gasolineras', [GasolineraWebController::class, 'index'])->name('web.gasolineras.index');
-    Route::get('/caja-chica', [CajaChicaWebController::class, 'index'])->name('web.caja-chica.index');
     Route::get('/reportes', [ReporteWebController::class, 'index'])->name('web.reportes.index');
     Route::get('/reportes/exportar-pdf', [ReporteWebController::class, 'exportarPdf'])
         ->name('web.reportes.pdf');
@@ -38,6 +36,9 @@ Route::middleware(['auth', 'can:web_consulta'])->group(function () {
         Route::post('/solicitudes/{id}/rechazar', [SolicitudWebController::class, 'rechazar'])
             ->name('web.solicitudes.rechazar');
         Route::post('/ordenes', [OrdenWebController::class, 'store'])->name('web.ordenes.store');
+        Route::post('/ordenes/estimar', [OrdenWebController::class, 'estimar'])->name('web.ordenes.estimar');
+        Route::post('/ordenes/{id}/rehabilitar', [OrdenWebController::class, 'rehabilitar'])
+            ->name('web.ordenes.rehabilitar');
 
         Route::post('/conductores', [ConductorWebController::class, 'store'])->name('web.conductores.store');
         Route::put('/conductores/{id}', [ConductorWebController::class, 'update'])->name('web.conductores.update');
@@ -51,6 +52,5 @@ Route::middleware(['auth', 'can:web_consulta'])->group(function () {
         Route::put('/gasolineras/{id}', [GasolineraWebController::class, 'update'])->name('web.gasolineras.update');
         Route::delete('/gasolineras/{id}', [GasolineraWebController::class, 'destroy'])->name('web.gasolineras.destroy');
 
-        Route::post('/caja-chica', [CajaChicaWebController::class, 'store'])->name('web.caja-chica.store');
     });
 });

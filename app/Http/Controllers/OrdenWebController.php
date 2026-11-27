@@ -9,8 +9,13 @@ use App\Models\Solicitud;
 use App\Models\Vehiculo;
 use App\Notifications\OrdenAsignada;
 use App\Http\Controllers\Concerns\ValidatesWebRequests;
+use App\Services\CombustibleEstimator;
+use App\Models\Conductor;
+use App\Models\DetalleOrden;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -62,7 +67,7 @@ class OrdenWebController extends Controller
         return Inertia::render('Ordenes/Index', [
             'ordenes' => $ordenes,
             'filtros' => $filtros,
-            'conductores' => \App\Models\Conductor::with('usuario:id,name')->where('activo', true)->orderBy('id')->get(),
+            'conductores' => Conductor::with('usuario:id,name')->where('activo', true)->orderBy('id')->get(),
             'gasolineras' => Gasolinera::where('activo', true)->orderBy('nombre')->get(),
             'vehiculos' => Vehiculo::where('activo', true)->orderBy('placa')->get(),
             'solicitudesPendientes' => Solicitud::with(['conductor.usuario:id,name', 'vehiculo'])
@@ -124,13 +129,23 @@ class OrdenWebController extends Controller
             ]);
 
             foreach ($datos['detalles'] as $linea) {
+                $vehiculo = ($linea['vehiculo_id'] ?? null) ? Vehiculo::find($linea['vehiculo_id']) : null;
+                $tipo = $linea['tipo_destino'] === 'vehiculo'
+                    ? ($vehiculo?->tipo_combustible ?: 'diesel')
+                    : 'gasolina';
+                $estimacion = CombustibleEstimator::calcular(
+                    (float) $linea['monto'],
+                    CombustibleEstimator::clavePrecio($tipo),
+                    $vehiculo
+                ) ?? [];
+
                 $orden->detalles()->create([
                     'tipo_destino' => $linea['tipo_destino'],
                     'vehiculo_id' => $linea['vehiculo_id'] ?? null,
                     'descripcion_mgp' => $linea['descripcion_mgp'] ?? null,
-                    'tipo_combustible' => $linea['tipo_destino'] === 'vehiculo' ? 'diesel' : 'gasolina',
+                    'tipo_combustible' => $tipo,
                     'monto' => $linea['monto'],
-                ]);
+                ] + $this->estimacionPersistible($estimacion));
             }
 
             $solicitud->update(['estado' => 'aprobada']);
@@ -142,6 +157,90 @@ class OrdenWebController extends Controller
         $orden->avisar(new OrdenAsignada($orden));
 
         return back()->with('success', 'La orden fue creada y la solicitud aprobada.');
+    }
+
+    public function estimar(Request $request)
+    {
+        $datos = $this->validateWeb($request, [
+            'monto' => ['required', 'numeric', 'min:0.01'],
+            'vehiculo_id' => ['nullable', 'required_without:tipo_combustible', 'exists:vehiculos,id'],
+            'tipo_combustible' => ['nullable', 'in:diesel,gasolina'],
+            'ciudad' => ['nullable', 'in:tegucigalpa,san_pedro_sula'],
+            'combustible' => ['nullable', 'in:regular,super,diesel'],
+        ], [
+            'monto.required' => 'El monto es obligatorio.',
+            'monto.numeric' => 'El monto debe ser numérico.',
+            'monto.min' => 'El monto debe ser mayor que cero.',
+            'vehiculo_id.exists' => 'El vehículo seleccionado no existe.',
+            'tipo_combustible.in' => 'El combustible seleccionado no es válido.',
+            'ciudad.in' => 'La ciudad seleccionada no es válida.',
+            'combustible.in' => 'La variante de combustible seleccionada no es válida.',
+        ]);
+
+        $vehiculo = ($datos['vehiculo_id'] ?? null) ? Vehiculo::findOrFail($datos['vehiculo_id']) : null;
+        $tipo = $vehiculo?->tipo_combustible ?: ($datos['tipo_combustible'] ?? 'gasolina');
+        $clave = CombustibleEstimator::clavePrecio($tipo, $datos['combustible'] ?? null);
+        $estimacion = CombustibleEstimator::calcular(
+            (float) $datos['monto'],
+            $clave,
+            $vehiculo,
+            $datos['ciudad'] ?? null
+        );
+        abort_unless($estimacion, 422, 'No hay un precio vigente para ese combustible y ciudad.');
+
+        return response()->json([
+            'monto_autorizado' => round((float) $datos['monto'], 2),
+            'combustible' => $estimacion['combustible_precio'],
+            'ciudad' => $estimacion['ciudad_precio'],
+            'precio_por_galon' => $estimacion['precio_galon'],
+            'vigente_desde' => $estimacion['precio_vigente_desde'],
+            'galones_aproximados' => $estimacion['galones_estimados'],
+            'litros_aproximados' => $estimacion['litros_estimados'],
+            'rendimiento_km_litro' => $estimacion['rendimiento_km_litro'],
+            'kilometros_aproximados' => $estimacion['km_estimados'],
+        ]);
+    }
+
+    public function rehabilitar(Request $request, string $id)
+    {
+        $datos = $this->validateWeb($request, [
+            'horas_vigencia' => ['required', 'integer', 'between:1,3'],
+            'password' => ['required', 'string'],
+        ], [
+            'horas_vigencia.required' => 'La vigencia es obligatoria.',
+            'horas_vigencia.between' => 'La vigencia debe ser de 1 a 3 horas.',
+            'password.required' => 'La contraseña del administrador es obligatoria.',
+        ]);
+
+        if (! Hash::check($datos['password'], $request->user()->password)) {
+            throw ValidationException::withMessages([
+                'password' => 'La contraseña del administrador es incorrecta.',
+            ]);
+        }
+
+        $orden = DB::transaction(function () use ($datos, $id, $request) {
+            $orden = Orden::whereKey($id)->lockForUpdate()->firstOrFail();
+            abort_unless($orden->estado === 'vencida', 422, 'Solo se pueden rehabilitar órdenes vencidas.');
+
+            $ahora = now();
+            $orden->update([
+                'estado' => 'abierta_tarde',
+                'horas_vigencia' => $datos['horas_vigencia'],
+                'justificacion' => null,
+                'asignado_por' => $request->user()->id,
+                'fecha_asignacion' => $ahora,
+                'vence_asignacion' => $ahora->copy()->addHours($datos['horas_vigencia']),
+                'fecha_apertura' => $ahora,
+                'vence_apertura' => $ahora->copy()->addMinutes(15),
+                'fecha_completada' => null,
+            ]);
+
+            return $orden->fresh(['detalles.vehiculo', 'gasolinera', 'conductor.usuario']);
+        });
+
+        $orden->avisar(new OrdenAsignada($orden));
+
+        return back()->with('success', 'La orden fue rehabilitada correctamente.');
     }
 
     public function show(string $id)
@@ -173,7 +272,40 @@ class OrdenWebController extends Controller
     {
         $datos = $orden->toArray();
 
-        foreach ($datos['detalles'] as &$detalle) {
+        foreach ($datos['detalles'] as $indice => &$detalle) {
+            $modeloDetalle = $orden->detalles[$indice] ?? null;
+            $tipoCombustible = $modeloDetalle?->combustible_precio
+                ?: CombustibleEstimator::clavePrecio($modeloDetalle?->tipo_combustible ?? 'gasolina');
+            $ciudad = CombustibleEstimator::ciudad($modeloDetalle?->ciudad_precio);
+            $estimacion = $modeloDetalle
+                ? CombustibleEstimator::calcular(
+                    (float) $modeloDetalle->monto,
+                    $tipoCombustible,
+                    $modeloDetalle->vehiculo,
+                    $ciudad,
+                    $orden->fecha_asignacion
+                )
+                : null;
+            $galones = $modeloDetalle?->galones_estimados ?? $estimacion['galones_estimados'] ?? null;
+            $detalle['combustible_precio'] = $modeloDetalle?->combustible_precio
+                ?? $estimacion['combustible_precio']
+                ?? $tipoCombustible;
+            $detalle['ciudad_precio'] = $modeloDetalle?->ciudad_precio
+                ?? $estimacion['ciudad_precio']
+                ?? $ciudad;
+            $detalle['precio_galon'] = $modeloDetalle?->precio_galon
+                ?? $estimacion['precio_galon']
+                ?? null;
+            $detalle['precio_vigente_desde'] = $modeloDetalle?->precio_vigente_desde?->toDateString()
+                ?? $estimacion['precio_vigente_desde']
+                ?? null;
+            $detalle['galones_estimados'] = $galones;
+            $detalle['litros_estimados'] = $estimacion['litros_estimados']
+                ?? ($galones === null ? null : round((float) $galones * CombustibleEstimator::LITROS_POR_GALON, 2));
+            $detalle['km_estimados'] = $modeloDetalle?->km_estimados
+                ?? $estimacion['km_estimados']
+                ?? null;
+
             foreach ($detalle['evidencias'] as &$evidencia) {
                 $evidencia['url'] = route('web.evidencias.ver', ['id' => $evidencia['id']]);
             }
@@ -182,5 +314,23 @@ class OrdenWebController extends Controller
         unset($detalle);
 
         return $datos;
+    }
+
+    private function estimacionPersistible(array $estimacion): array
+    {
+        $campos = [
+            'combustible_precio',
+            'ciudad_precio',
+            'precio_galon',
+            'precio_vigente_desde',
+            'galones_estimados',
+            'km_estimados',
+        ];
+        $columnasDisponibles = array_filter(
+            $campos,
+            fn (string $campo) => Schema::hasColumn('detalle_ordenes', $campo)
+        );
+
+        return array_intersect_key($estimacion, array_flip($columnasDisponibles));
     }
 }

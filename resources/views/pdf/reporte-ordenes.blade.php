@@ -28,6 +28,9 @@
         .orders td { font-size: 7.5px; }
         .orders tbody tr:nth-child(even) { background: #f7f9fb; }
         .amount { text-align: right !important; white-space: nowrap; }
+        .metrics { border-collapse: collapse; margin-top: 8px; width: 100%; }
+        .metrics th, .metrics td { border: 1px solid #d6dce5; padding: 5px 7px; text-align: left; }
+        .metrics th { background: #f3f5f8; }
         .note { color: #5b6575; font-size: 8px; margin-top: 9px; }
         .footer { border-top: 1px solid #d6dce5; bottom: -20px; color: #718096; font-size: 8px; left: 0; padding-top: 6px; position: fixed; right: 0; }
     </style>
@@ -66,9 +69,64 @@
             </td>
             <td>
                 <span class="summary-label">Monto registrado en órdenes ejecutadas</span>
-                <span class="summary-value">L {{ number_format($resumen['monto_consumido'], 2, ',', '.') }}</span>
+                <span class="summary-value">L {{ number_format($resumen['monto_total'], 2, ',', '.') }}</span>
             </td>
         </tr>
+    </table>
+
+    <table class="metrics">
+        <tbody>
+            <tr>
+                <th>Promedio por orden</th>
+                <td>L {{ number_format($resumen['promedio_orden'], 2, ',', '.') }}</td>
+                <th>Galones estimados</th>
+                <td>{{ number_format($resumen['galones_total'], 2, ',', '.') }}</td>
+                <th>Litros estimados</th>
+                <td>{{ number_format($resumen['litros_total'], 2, ',', '.') }}</td>
+            </tr>
+            <tr>
+                <th>Km estimados</th>
+                <td>{{ number_format($resumen['km_total'], 2, ',', '.') }}</td>
+                <th>Precio promedio/galón</th>
+                <td>L {{ number_format($resumen['precio_promedio_galon'], 2, ',', '.') }}</td>
+                <th>Cumplimiento a tiempo</th>
+                <td>{{ number_format($resumen['cumplimiento_pct'], 1, ',', '.') }}%</td>
+            </tr>
+            <tr>
+                <th>Cumplidas a tiempo</th>
+                <td>{{ $resumen['cumplidas_a_tiempo'] }}</td>
+                <th>Completadas tarde</th>
+                <td>{{ $resumen['completadas_tarde'] }}</td>
+                <th>Vencidas</th>
+                <td>{{ $resumen['vencidas'] }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2 class="section-title">Consumo estimado por combustible</h2>
+    <table class="metrics">
+        <thead>
+            <tr>
+                <th>Combustible</th>
+                <th>Monto</th>
+                <th>Galones</th>
+                <th>Litros</th>
+                <th>Precio promedio por galón</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($por_combustible as $combustible)
+                <tr>
+                    <td>{{ ucfirst($combustible['tipo_combustible']) }}</td>
+                    <td>L {{ number_format($combustible['monto_total'], 2, ',', '.') }}</td>
+                    <td>{{ number_format($combustible['galones_total'], 2, ',', '.') }}</td>
+                    <td>{{ number_format($combustible['litros_total'], 2, ',', '.') }}</td>
+                    <td>L {{ number_format($combustible['precio_promedio_galon'], 2, ',', '.') }}</td>
+                </tr>
+            @empty
+                <tr><td colspan="5">No hay consumos ejecutados para los filtros seleccionados.</td></tr>
+            @endforelse
+        </tbody>
     </table>
 
     <table class="states">
@@ -92,15 +150,18 @@
     <table class="orders">
         <thead>
             <tr>
-                <th style="width: 10%">Orden</th>
-                <th style="width: 10%">Asignación</th>
-                <th style="width: 13%">Conductor</th>
-                <th style="width: 12%">Gasolinera</th>
-                <th style="width: 12%">Estado</th>
-                <th style="width: 13%">Destino</th>
-                <th style="width: 8%">Combustible</th>
-                <th class="amount" style="width: 11%">Monto asignado</th>
-                <th class="amount" style="width: 11%">Monto contabilizado</th>
+                <th style="width: 9%">Orden</th>
+                <th style="width: 9%">Asignación</th>
+                <th style="width: 11%">Conductor</th>
+                <th style="width: 10%">Gasolinera</th>
+                <th style="width: 9%">Estado</th>
+                <th style="width: 10%">Destino</th>
+                <th style="width: 7%">Combustible</th>
+                <th class="amount" style="width: 7%">Precio/galón</th>
+                <th class="amount" style="width: 6%">Galones</th>
+                <th class="amount" style="width: 6%">Km estimados</th>
+                <th class="amount" style="width: 8%">Monto asignado</th>
+                <th class="amount" style="width: 8%">Monto contabilizado</th>
             </tr>
         </thead>
         <tbody>
@@ -114,6 +175,9 @@
                         <td>{{ $etiquetasEstados[$orden->estado] ?? $orden->estado }}</td>
                         <td>{{ $detalle->vehiculo?->placa ?? $detalle->descripcion_mgp ?? 'MGP' }}</td>
                         <td>{{ $detalle->tipo_combustible }}</td>
+                        <td class="amount">{{ $detalle->precio_galon === null ? '—' : 'L '.number_format($detalle->precio_galon, 2, ',', '.') }}</td>
+                        <td class="amount">{{ $detalle->galones_estimados === null ? '—' : number_format($detalle->galones_estimados, 2, ',', '.') }}</td>
+                        <td class="amount">{{ $detalle->km_estimados === null ? '—' : number_format($detalle->km_estimados, 2, ',', '.') }}</td>
                         <td class="amount">L {{ number_format((float) $detalle->monto, 2, ',', '.') }}</td>
                         <td class="amount">
                             @if (in_array($orden->estado, $estadosEjecutados, true))
@@ -130,18 +194,18 @@
                         <td>{{ $orden->conductor?->usuario?->name ?? '—' }}</td>
                         <td>{{ $orden->gasolinera?->nombre ?? '—' }}</td>
                         <td>{{ $etiquetasEstados[$orden->estado] ?? $orden->estado }}</td>
-                        <td colspan="4">Sin detalles registrados</td>
+                        <td colspan="7">Sin detalles registrados</td>
                     </tr>
                 @endforelse
             @empty
                 <tr>
-                    <td colspan="9">No se encontraron órdenes para los filtros seleccionados.</td>
+                    <td colspan="12">No se encontraron órdenes para los filtros seleccionados.</td>
                 </tr>
             @endforelse
         </tbody>
     </table>
 
-    <p class="note">El monto contabilizado se calcula con el monto registrado en cada detalle de las órdenes completadas o completadas tarde.</p>
+    <p class="note">Las cantidades de combustible son estimaciones calculadas con el precio vigente actual en San Pedro Sula; no son lecturas históricas guardadas en la orden.</p>
     <footer class="footer">GEOCOM · Reporte generado por el Portal Web</footer>
 </body>
 </html>

@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CajaChica;
+use App\Models\Combustible;
 use App\Models\Orden;
 use App\Models\Solicitud;
+use App\Services\CombustibleHistoryService;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -22,7 +23,7 @@ class DashboardController extends Controller
 
     private const ESTADOS_EJECUTADOS = ['completada', 'completada_tarde'];
 
-    public function index()
+    public function index(CombustibleHistoryService $historialCombustibles)
     {
         Orden::marcarVencidas();
 
@@ -48,7 +49,15 @@ class DashboardController extends Controller
             'ordenesEjecutadas' => $ordenesEjecutadas,
             'gastoEjecutado' => $gastoEjecutado,
             'gastoCompletado' => $gastoEjecutado,
-            'totalCajaChica' => (float) CajaChica::sum('monto'),
+            'preciosVigentes' => Combustible::vigentes()
+                ->whereIn('ciudad', ['san_pedro_sula', 'tegucigalpa'])
+                ->orderBy('ciudad')
+                ->orderBy('combustible')
+                ->get(['ciudad', 'combustible', 'precio', 'variacion', 'vigente_desde']),
+            'historialPrecios' => collect(['san_pedro_sula', 'tegucigalpa'])
+                ->mapWithKeys(fn (string $ciudad) => [
+                    $ciudad => $historialCombustibles->obtener($ciudad, 12),
+                ]),
             'ultimasSolicitudes' => Solicitud::with(['conductor.usuario:id,name', 'vehiculo'])
                 ->where('estado', 'pendiente')
                 ->latest()

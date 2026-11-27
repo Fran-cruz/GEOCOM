@@ -48,7 +48,6 @@ class WebRoleAccessTest extends TestCase
             '/conductores',
             '/vehiculos',
             '/gasolineras',
-            '/caja-chica',
             '/reportes',
         ] as $uri) {
             $this->get($uri)->assertOk();
@@ -79,13 +78,6 @@ class WebRoleAccessTest extends TestCase
         $this->delete("/gasolineras/{$gasolinera->id}")
             ->assertSessionHas('success');
         $this->assertDatabaseHas('gasolineras', ['id' => $gasolinera->id, 'activo' => false]);
-
-        $this->post('/caja-chica', [
-            'monto' => 100,
-            'descripcion' => 'Entrega de prueba',
-            'fecha_entrega' => now()->toDateString(),
-        ])->assertSessionHas('success');
-        $this->assertDatabaseHas('caja_chica', ['registrado_por' => $admin->id, 'descripcion' => 'Entrega de prueba']);
 
         $conductor = $this->userWithRole('conductor');
         $ficha = Conductor::create([
@@ -189,7 +181,6 @@ class WebRoleAccessTest extends TestCase
             '/conductores',
             '/vehiculos',
             '/gasolineras',
-            '/caja-chica',
             '/reportes',
         ] as $uri) {
             $this->get($uri)->assertOk();
@@ -207,7 +198,6 @@ class WebRoleAccessTest extends TestCase
             ['POST', '/gasolineras'],
             ['PUT', '/gasolineras/1'],
             ['DELETE', '/gasolineras/1'],
-            ['POST', '/caja-chica'],
         ] as [$method, $uri]) {
             $this->call($method, $uri)->assertForbidden();
         }
