@@ -1,5 +1,6 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 
@@ -10,7 +11,14 @@ const props = defineProps({
     },
 });
 
+const page = usePage();
+const canOperate = computed(() => Boolean(page.props.auth?.can_operate ?? page.props.can_operate));
 const enlargedEvidence = ref(null);
+const rehabilitationModalOpen = ref(false);
+const rehabilitationForm = useForm({
+    horas_vigencia: 1,
+    password: '',
+});
 
 const formatCurrency = (amount) => `L ${new Intl.NumberFormat('es-HN', {
     minimumFractionDigits: 2,
@@ -25,6 +33,18 @@ const formatDateTime = (value) => {
     return new Intl.DateTimeFormat('es-HN', {
         dateStyle: 'medium',
         timeStyle: 'short',
+        timeZone: 'America/Tegucigalpa',
+    }).format(date);
+};
+
+const formatDate = (value) => {
+    if (!value) return '—';
+    const dateOnly = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const date = new Date(dateOnly ? `${value}T12:00:00Z` : value);
+    if (Number.isNaN(date.getTime())) return '—';
+
+    return new Intl.DateTimeFormat('es-HN', {
+        dateStyle: 'medium',
         timeZone: 'America/Tegucigalpa',
     }).format(date);
 };
@@ -55,6 +75,37 @@ const galonesDespachados = (detalle) => detalle.galones_despachados
 const precioPorGalon = (detalle) => detalle.precio_por_galon
     ?? detalle.precio_galon
     ?? detalle.despacho?.precio_por_galon;
+
+const openRehabilitationModal = () => {
+    rehabilitationForm.reset();
+    rehabilitationForm.clearErrors();
+    rehabilitationForm.horas_vigencia = 1;
+    rehabilitationModalOpen.value = true;
+};
+
+const closeRehabilitationModal = () => {
+    rehabilitationModalOpen.value = false;
+    rehabilitationForm.reset();
+    rehabilitationForm.clearErrors();
+};
+
+const rehabilitarOrden = () => {
+    rehabilitationForm.post(`/ordenes/${props.orden.id}/rehabilitar`, {
+        preserveScroll: true,
+        onSuccess: closeRehabilitationModal,
+    });
+};
+
+const combustibleLabel = (detalle) => ({
+    regular: 'Regular',
+    super: 'Súper',
+    diesel: 'Diésel',
+    gasolina: 'Gasolina',
+}[detalle.combustible_precio || detalle.tipo_combustible] || detalle.combustible_precio || detalle.tipo_combustible || 'Combustible');
+
+const formatNumber = (value) => value == null
+    ? '—'
+    : new Intl.NumberFormat('es-HN', { maximumFractionDigits: 2 }).format(Number(value));
 </script>
 
 <template>
@@ -70,6 +121,14 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                 <a href="/ordenes" class="rounded-xl border border-[#E5E0EB] bg-white px-4 py-2.5 text-xs font-semibold text-[#706A7A] transition hover:bg-[#FAF9FC]">
                     Todas las órdenes
                 </a>
+                <button
+                    v-if="orden.estado === 'vencida' && canOperate"
+                    type="button"
+                    class="rounded-xl bg-[#6042A6] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#342052]"
+                    @click="openRehabilitationModal"
+                >
+                    Rehabilitar Orden
+                </button>
             </header>
 
             <section class="overflow-hidden rounded-2xl bg-[#6042A6] text-white shadow-[0_16px_40px_rgba(52,32,82,0.2)]">
@@ -97,6 +156,11 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                         <p class="mt-1 font-medium">{{ formatDateTime(orden.vence_asignacion || orden.vence_apertura) }}</p>
                     </div>
                 </div>
+            </section>
+
+            <section v-if="orden.justificacion" class="rounded-2xl border border-amber-200 bg-[#FDF1DD] p-5 sm:p-6">
+                <p class="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-800">Justificación de tardanza</p>
+                <p class="mt-2 whitespace-pre-line text-sm leading-6 text-[#24212D]">{{ orden.justificacion }}</p>
             </section>
 
             <section class="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
@@ -145,7 +209,7 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                         <article v-for="(detalle, index) in orden.detalles" :key="detalle.id || index" class="rounded-xl border border-[#E5E0EB] bg-[#FAF9FC]/70 p-4">
                             <div class="flex flex-wrap items-start justify-between gap-2">
                                 <div>
-                                    <p class="text-sm font-bold text-[#24212D]">{{ detalle.tipo_combustible === 'diesel' ? 'Diésel' : 'Gasolina' }}</p>
+                                    <p class="text-sm font-bold text-[#24212D]">{{ combustibleLabel(detalle) }}</p>
                                     <p class="mt-1 text-xs text-[#706A7A]">{{ destinoLinea(detalle) }}</p>
                                 </div>
                                 <span class="rounded-full bg-[#EEE7FA] px-2.5 py-1 text-[10px] font-semibold capitalize text-[#6042A6]">
@@ -158,6 +222,10 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                                     <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatCurrency(detalle.monto) }}</dd>
                                 </div>
                                 <div class="rounded-lg bg-white p-3">
+                                    <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Combustible</dt>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ combustibleLabel(detalle) }}</dd>
+                                </div>
+                                <div class="rounded-lg bg-white p-3">
                                     <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Monto despachado</dt>
                                     <dd class="mt-1 text-sm font-bold text-[#24212D]">
                                         {{ montoDespachado(detalle) != null ? formatCurrency(montoDespachado(detalle)) : 'No disponible' }}
@@ -167,9 +235,25 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                                     <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Galones</dt>
                                     <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ Number(galonesDespachados(detalle)).toLocaleString('es-HN') }} gal</dd>
                                 </div>
-                                <div v-if="precioPorGalon(detalle) != null" class="rounded-lg bg-white p-3">
+                                <div class="rounded-lg bg-white p-3">
                                     <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Precio por galón</dt>
-                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatCurrency(precioPorGalon(detalle)) }}</dd>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ precioPorGalon(detalle) == null ? '—' : formatCurrency(precioPorGalon(detalle)) }}</dd>
+                                </div>
+                                <div class="rounded-lg bg-white p-3">
+                                    <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Precio vigente desde</dt>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatDate(detalle.precio_vigente_desde) }}</dd>
+                                </div>
+                                <div class="rounded-lg bg-white p-3">
+                                    <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Galones estimados</dt>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatNumber(detalle.galones_estimados) }} gal</dd>
+                                </div>
+                                <div class="rounded-lg bg-white p-3">
+                                    <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Litros estimados</dt>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatNumber(detalle.litros_estimados) }} L</dd>
+                                </div>
+                                <div class="rounded-lg bg-white p-3">
+                                    <dt class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Kilómetros estimados</dt>
+                                    <dd class="mt-1 text-sm font-bold text-[#24212D]">{{ formatNumber(detalle.km_estimados) }} km</dd>
                                 </div>
                             </dl>
                         </article>
@@ -236,6 +320,62 @@ const precioPorGalon = (detalle) => detalle.precio_por_galon
                 class="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
                 @click.stop
             >
+        </div>
+
+        <div
+            v-if="rehabilitationModalOpen"
+            class="fixed inset-0 z-[80] flex items-center justify-center bg-[#24212D]/55 p-4 backdrop-blur-sm"
+            @click.self="closeRehabilitationModal"
+        >
+            <section
+                class="w-full max-w-md rounded-2xl border border-[#E5E0EB] bg-white p-6 shadow-2xl"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="rehabilitar-orden-title"
+            >
+                <h2 id="rehabilitar-orden-title" class="text-lg font-bold text-[#24212D]">Rehabilitar orden vencida</h2>
+                <p class="mt-1 text-sm text-[#706A7A]">La orden volverá a estar disponible por el periodo elegido.</p>
+                <form class="mt-5 space-y-4" @submit.prevent="rehabilitarOrden">
+                    <div>
+                        <label for="rehabilitar-horas" class="mb-1.5 block text-sm font-semibold text-[#24212D]">Nueva vigencia</label>
+                        <select
+                            id="rehabilitar-horas"
+                            v-model.number="rehabilitationForm.horas_vigencia"
+                            required
+                            class="w-full rounded-xl border border-[#E5E0EB] bg-white px-3 py-2.5 text-sm text-[#24212D] outline-none focus:border-[#6042A6]"
+                        >
+                            <option :value="1">1 hora</option>
+                            <option :value="2">2 horas</option>
+                            <option :value="3">3 horas</option>
+                        </select>
+                        <p v-if="rehabilitationForm.errors.horas_vigencia" class="mt-1 text-xs text-rose-700">{{ rehabilitationForm.errors.horas_vigencia }}</p>
+                    </div>
+                    <div>
+                        <label for="rehabilitar-password" class="mb-1.5 block text-sm font-semibold text-[#24212D]">Contraseña del administrador</label>
+                        <input
+                            id="rehabilitar-password"
+                            v-model="rehabilitationForm.password"
+                            type="password"
+                            required
+                            autocomplete="current-password"
+                            class="w-full rounded-xl border border-[#E5E0EB] px-3 py-2.5 text-sm text-[#24212D] outline-none focus:border-[#6042A6]"
+                        >
+                        <p v-if="rehabilitationForm.errors.password" class="mt-1 text-xs text-rose-700">{{ rehabilitationForm.errors.password }}</p>
+                    </div>
+                    <div class="flex flex-col-reverse gap-3 border-t border-[#E5E0EB] pt-4 sm:flex-row sm:justify-end">
+                        <button type="button" class="rounded-xl border border-[#E5E0EB] px-4 py-2.5 text-sm font-semibold text-[#706A7A] hover:bg-[#FAF9FC]" @click="closeRehabilitationModal">
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            :disabled="rehabilitationForm.processing || !canOperate"
+                            class="rounded-xl bg-[#6042A6] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#342052] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {{ rehabilitationForm.processing ? 'Rehabilitando…' : 'Confirmar rehabilitación' }}
+                        </button>
+                    </div>
+                </form>
+            </section>
         </div>
     </AuthenticatedLayout>
 </template>

@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 
@@ -24,6 +24,14 @@ const props = defineProps({
     gastoCompletado: {
         type: Number,
         default: 0,
+    },
+    preciosVigentes: {
+        type: Array,
+        default: () => [],
+    },
+    historialPrecios: {
+        type: Object,
+        default: () => ({}),
     },
     ultimasSolicitudes: {
         type: Array,
@@ -71,15 +79,78 @@ const fechaActual = computed(() => new Intl.DateTimeFormat('es-HN', {
     timeZone: 'America/Tegucigalpa',
 }).format(new Date()));
 
+const ciudades = [
+    { value: 'san_pedro_sula', label: 'San Pedro Sula' },
+    { value: 'tegucigalpa', label: 'Tegucigalpa' },
+];
+const combustibles = [
+    { value: 'regular', label: 'Regular' },
+    { value: 'super', label: 'Súper' },
+    { value: 'diesel', label: 'Diésel' },
+];
+const ciudadSeleccionada = ref('san_pedro_sula');
+const combustibleSeleccionado = ref('regular');
+const historialAbierto = ref(false);
+
 const formatCurrency = (amount) => `L ${new Intl.NumberFormat('es-HN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 }).format(Number(amount) || 0)}`;
 
+const preciosCiudad = computed(() => combustibles.map((combustible) => ({
+    ...combustible,
+    precio: props.preciosVigentes.find((precio) => (
+        precio.ciudad === ciudadSeleccionada.value && precio.combustible === combustible.value
+    )),
+})));
+
+const semanasHistorial = computed(() => (
+    props.historialPrecios?.[ciudadSeleccionada.value]?.semanas || []
+));
+
+const evolucionSeleccionada = computed(() => semanasHistorial.value
+    .map((semana) => {
+        const valor = semana[combustibleSeleccionado.value];
+        return {
+            fecha: semana.vigente_desde,
+            precio: valor == null || valor === '' ? Number.NaN : Number(valor),
+        };
+    })
+    .filter((semana) => Number.isFinite(semana.precio)));
+
+const estadisticasEvolucion = computed(() => {
+    const valores = evolucionSeleccionada.value.map((semana) => semana.precio);
+    const precioActual = preciosCiudad.value
+        .find((combustible) => combustible.value === combustibleSeleccionado.value)?.precio?.precio;
+
+    return {
+        minimo: valores.length ? Math.min(...valores) : null,
+        maximo: valores.length ? Math.max(...valores) : null,
+        actual: precioActual ?? valores[valores.length - 1] ?? null,
+    };
+});
+
+const variacionLabel = (variacion) => {
+    const valor = Number(variacion);
+    if (!Number.isFinite(valor)) return 'Sin variación';
+    const signo = valor > 0 ? '+' : (valor < 0 ? '-' : '');
+
+    return `${signo}${formatCurrency(Math.abs(valor))}`;
+};
+
+const alturaBarra = (precio) => {
+    const minimo = estadisticasEvolucion.value.minimo;
+    const maximo = estadisticasEvolucion.value.maximo;
+    if (minimo === null || maximo === null || maximo === minimo) return '100%';
+
+    return `${20 + ((precio - minimo) / (maximo - minimo)) * 80}%`;
+};
+
 const formatDate = (value) => {
     if (!value) return '—';
 
-    const date = new Date(value);
+    const dateOnly = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const date = new Date(dateOnly ? `${value}T12:00:00Z` : value);
     if (Number.isNaN(date.getTime())) return '—';
 
     return new Intl.DateTimeFormat('es-HN', {
@@ -146,7 +217,7 @@ const getOrdenDestino = (orden) => {
                 </div>
             </section>
 
-            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Indicadores principales">
+            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Indicadores principales">
                 <article class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
                     <div class="flex items-start justify-between gap-3">
                         <div>
@@ -203,6 +274,121 @@ const getOrdenDestino = (orden) => {
                     <p class="mt-3 text-[11px] font-medium text-amber-700 group-hover:text-amber-800">Revisar solicitudes <span aria-hidden="true">→</span></p>
                 </Link>
 
+            </section>
+
+            <section class="space-y-5 rounded-2xl border border-[#E5E0EB] bg-white p-5 shadow-sm sm:p-6">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <span class="inline-flex rounded-full bg-[#EEE7FA] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-[#6042A6]">
+                            Mercado de combustible
+                        </span>
+                        <h2 class="mt-2 text-lg font-bold tracking-tight text-[#24212D]">Precios Vigentes de Combustible</h2>
+                        <p class="mt-1 text-xs text-[#706A7A]">Precios por galón y variación desde la actualización anterior.</p>
+                    </div>
+                    <label class="text-xs font-semibold text-[#706A7A]">
+                        Ciudad
+                        <select
+                            v-model="ciudadSeleccionada"
+                            class="mt-1.5 min-w-52 rounded-xl border border-[#E5E0EB] bg-white px-3 py-2.5 text-sm text-[#24212D] outline-none focus:border-[#6042A6] focus:ring-2 focus:ring-[#6042A6]/15"
+                        >
+                            <option v-for="ciudad in ciudades" :key="ciudad.value" :value="ciudad.value">{{ ciudad.label }}</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-3">
+                    <article
+                        v-for="combustible in preciosCiudad"
+                        :key="combustible.value"
+                        class="rounded-xl border border-[#E5E0EB] bg-[#FAF9FC] p-4"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-xs font-semibold text-[#706A7A]">{{ combustible.label }}</p>
+                                <p class="mt-2 text-2xl font-bold tracking-tight text-[#24212D]">
+                                    {{ combustible.precio ? formatCurrency(combustible.precio.precio) : 'Sin precio' }}
+                                </p>
+                                <p class="mt-1 text-[11px] text-[#706A7A]">por galón</p>
+                            </div>
+                            <span
+                                v-if="combustible.precio"
+                                class="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold"
+                                :class="Number(combustible.precio.variacion) > 0
+                                    ? 'bg-rose-50 text-rose-700'
+                                    : (Number(combustible.precio.variacion) < 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600')"
+                            >
+                                {{ variacionLabel(combustible.precio.variacion) }}
+                            </span>
+                        </div>
+                        <p class="mt-4 border-t border-[#E5E0EB] pt-3 text-[11px] text-[#706A7A]">
+                            Vigente desde:
+                            <span class="font-semibold text-[#24212D]">{{ formatDate(combustible.precio?.vigente_desde) }}</span>
+                        </p>
+                    </article>
+                </div>
+
+                <div class="border-t border-[#E5E0EB] pt-4">
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-[#6042A6] transition hover:bg-[#EEE7FA]/70"
+                        :aria-expanded="historialAbierto"
+                        @click="historialAbierto = !historialAbierto"
+                    >
+                        <span>{{ historialAbierto ? '−' : '+' }}</span>
+                        Evolución últimos 3 meses (12 semanas)
+                    </button>
+
+                    <div v-if="historialAbierto" class="mt-4 space-y-5">
+                        <div class="flex flex-wrap gap-2" role="tablist" aria-label="Seleccionar combustible">
+                            <button
+                                v-for="combustible in combustibles"
+                                :key="combustible.value"
+                                type="button"
+                                role="tab"
+                                :aria-selected="combustibleSeleccionado === combustible.value"
+                                class="rounded-full border px-3 py-1.5 text-xs font-semibold transition"
+                                :class="combustibleSeleccionado === combustible.value
+                                    ? 'border-[#6042A6] bg-[#6042A6] text-white'
+                                    : 'border-[#E5E0EB] text-[#706A7A] hover:bg-[#EEE7FA]/60'"
+                                @click="combustibleSeleccionado = combustible.value"
+                            >
+                                {{ combustible.label }}
+                            </button>
+                        </div>
+
+                        <div class="grid gap-3 sm:grid-cols-3">
+                            <div class="rounded-xl bg-[#FAF9FC] p-3">
+                                <p class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Mínimo</p>
+                                <p class="mt-1 text-base font-bold text-[#24212D]">{{ estadisticasEvolucion.minimo === null ? '—' : formatCurrency(estadisticasEvolucion.minimo) }}</p>
+                            </div>
+                            <div class="rounded-xl bg-[#FAF9FC] p-3">
+                                <p class="text-[10px] font-semibold uppercase tracking-wide text-[#706A7A]">Máximo</p>
+                                <p class="mt-1 text-base font-bold text-[#24212D]">{{ estadisticasEvolucion.maximo === null ? '—' : formatCurrency(estadisticasEvolucion.maximo) }}</p>
+                            </div>
+                            <div class="rounded-xl bg-[#EEE7FA]/60 p-3">
+                                <p class="text-[10px] font-semibold uppercase tracking-wide text-[#6042A6]">Precio actual</p>
+                                <p class="mt-1 text-base font-bold text-[#342052]">{{ estadisticasEvolucion.actual === null ? '—' : formatCurrency(estadisticasEvolucion.actual) }}</p>
+                            </div>
+                        </div>
+
+                        <div v-if="evolucionSeleccionada.length" class="space-y-3">
+                            <div
+                                v-for="(semana, index) in evolucionSeleccionada"
+                                :key="`${semana.fecha}-${index}`"
+                                class="grid grid-cols-[90px_1fr_auto] items-center gap-3"
+                            >
+                                <span class="text-[10px] text-[#706A7A]">{{ formatDate(semana.fecha) }}</span>
+                                <div class="h-2 overflow-hidden rounded-full bg-[#EEE7FA]">
+                                    <div class="h-full rounded-full bg-[#6042A6]" :style="{ width: alturaBarra(semana.precio) }" />
+                                </div>
+                                <span class="text-xs font-semibold text-[#24212D]">{{ formatCurrency(semana.precio) }}</span>
+                            </div>
+                        </div>
+                        <p v-else class="rounded-xl bg-[#FAF9FC] px-4 py-8 text-center text-sm text-[#706A7A]">
+                            No hay historial de precios disponible para este combustible y ciudad.
+                        </p>
+                    </div>
+                </div>
             </section>
 
             <section class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">

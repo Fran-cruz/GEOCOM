@@ -1,6 +1,7 @@
 <script setup>
+import axios from 'axios';
 import { router, useForm, usePage } from '@inertiajs/vue3';
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
@@ -40,6 +41,7 @@ const filterValues = () => ({
     gasolinera_id: props.filtros.gasolinera_id || '',
     desde: props.filtros.desde || '',
     hasta: props.filtros.hasta || '',
+    vehiculo_id: new URLSearchParams(page.url.split('?')[1] || '').get('vehiculo_id') || '',
 });
 const filters = reactive(filterValues());
 const filterStates = [
@@ -53,6 +55,9 @@ const filterStates = [
 ];
 
 watch(() => props.filtros, () => Object.assign(filters, filterValues()), { deep: true });
+watch(() => page.url, () => {
+    filters.vehiculo_id = new URLSearchParams(page.url.split('?')[1] || '').get('vehiculo_id') || '';
+});
 
 const applyFilters = () => {
     router.get('/ordenes', {
@@ -61,6 +66,7 @@ const applyFilters = () => {
         gasolinera_id: filters.gasolinera_id || undefined,
         desde: filters.desde || undefined,
         hasta: filters.hasta || undefined,
+        vehiculo_id: filters.vehiculo_id || undefined,
     }, {
         preserveState: true,
         preserveScroll: true,
@@ -91,6 +97,13 @@ const ordenDestino = (orden) => (orden.detalles || [])
     .join(' · ') || '—';
 const montoAutorizado = (orden) => (orden.detalles || [])
     .reduce((total, detalle) => total + Number(detalle.monto || 0), 0);
+const ordenesVisibles = computed(() => {
+    if (!filters.vehiculo_id) return props.ordenes.data || [];
+
+    return (props.ordenes.data || []).filter((orden) => (
+        (orden.detalles || []).some((detalle) => String(detalle.vehiculo_id || '') === String(filters.vehiculo_id))
+    ));
+});
 
 const formVisible = ref(false);
 const requestedSolicitudId = new URLSearchParams(page.url.split('?')[1] || '').get('solicitud_id') || '';
@@ -100,6 +113,18 @@ const form = useForm({
     horas_vigencia: 1,
     detalles: [],
 });
+const estimates = reactive([]);
+const estimateTimers = new Map();
+const estimateVersions = new Map();
+let estimateVersionCounter = 0;
+
+const clearEstimates = () => {
+    estimateTimers.forEach((timer) => window.clearTimeout(timer));
+    estimateTimers.clear();
+    estimateVersions.clear();
+    estimates.splice(0, estimates.length);
+};
+onBeforeUnmount(clearEstimates);
 
 const solicitudSeleccionada = computed(() => props.solicitudesPendientes
     .find((solicitud) => String(solicitud.id) === String(form.solicitud_id)));
@@ -113,12 +138,13 @@ const getSolicitudDestinoTipos = (solicitud) => {
 
 const crearDetalle = (tipo, solicitud = solicitudSeleccionada.value) => ({
     tipo_destino: tipo,
-    vehiculo_id: tipo === 'vehiculo' ? (solicitud?.vehiculo_id || '') : '',
+    vehiculo_id: tipo === 'vehiculo' && solicitud?.vehiculo_id ? String(solicitud.vehiculo_id) : '',
     descripcion_mgp: tipo === 'mgp' ? (solicitud?.descripcion_mgp || '') : '',
     monto: '',
 });
 
 const cargarSolicitud = () => {
+    clearEstimates();
     form.detalles = getSolicitudDestinoTipos(solicitudSeleccionada.value)
         .map((tipo) => crearDetalle(tipo));
     form.clearErrors('solicitud_id', 'detalles');
@@ -139,6 +165,7 @@ const openForm = () => {
 
 const closeForm = () => {
     formVisible.value = false;
+    clearEstimates();
     form.reset();
     form.clearErrors();
 };
@@ -153,7 +180,62 @@ const addDetalle = () => {
 };
 
 const removeDetalle = (index) => {
-    if (form.detalles.length > 1) form.detalles.splice(index, 1);
+    if (form.detalles.length > 1) {
+        form.detalles.splice(index, 1);
+        clearEstimates();
+        form.detalles.forEach((detalle, detailIndex) => {
+            if (detalle.monto) estimateLine(detailIndex);
+        });
+    }
+};
+
+const estimateLine = (index) => {
+    const previousTimer = estimateTimers.get(index);
+    if (previousTimer) window.clearTimeout(previousTimer);
+
+    const version = ++estimateVersionCounter;
+    estimateVersions.set(index, version);
+    const detalle = form.detalles[index];
+    const monto = Number(detalle?.monto);
+
+    if (!detalle || !Number.isFinite(monto) || monto < 0.01) {
+        estimates[index] = null;
+        return;
+    }
+
+    if (detalle.tipo_destino === 'vehiculo' && !detalle.vehiculo_id) {
+        estimates[index] = {
+            data: null,
+            loading: false,
+            error: 'Selecciona un vehículo para calcular la estimación.',
+        };
+        return;
+    }
+
+    const lineSnapshot = detalle;
+    const timer = window.setTimeout(async () => {
+        estimates[index] = { data: null, loading: true, error: '' };
+        const payload = {
+            monto,
+            ...(detalle.tipo_destino === 'vehiculo'
+                ? { vehiculo_id: detalle.vehiculo_id }
+                : { tipo_combustible: 'gasolina' }),
+        };
+
+        try {
+            const response = await axios.post('/ordenes/estimar', payload);
+            if (estimateVersions.get(index) !== version || form.detalles[index] !== lineSnapshot) return;
+            estimates[index] = { data: response.data, loading: false, error: '' };
+        } catch (error) {
+            if (estimateVersions.get(index) !== version || form.detalles[index] !== lineSnapshot) return;
+            estimates[index] = {
+                data: null,
+                loading: false,
+                error: error.response?.data?.message || 'No se pudo calcular la estimación con los precios vigentes.',
+            };
+        }
+    }, 300);
+    estimateTimers.set(index, timer);
 };
 
 const submitForm = () => {
@@ -162,6 +244,14 @@ const submitForm = () => {
         onSuccess: closeForm,
     });
 };
+
+onMounted(() => {
+    if (requestedSolicitudId && props.solicitudesPendientes.some(
+        (solicitud) => String(solicitud.id) === String(requestedSolicitudId),
+    )) {
+        openForm();
+    }
+});
 </script>
 
 <template>
@@ -203,7 +293,7 @@ const submitForm = () => {
                     </div>
                 </div>
 
-                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <label class="text-xs font-semibold text-[#706A7A]">
                         Conductor
                         <select
@@ -227,6 +317,19 @@ const submitForm = () => {
                             <option value="">Todas las gasolineras</option>
                             <option v-for="gasolinera in gasolineras" :key="gasolinera.id" :value="String(gasolinera.id)">
                                 {{ gasolinera.nombre }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="text-xs font-semibold text-[#706A7A]">
+                        Vehículo
+                        <select
+                            v-model="filters.vehiculo_id"
+                            class="mt-1.5 w-full rounded-lg border border-[#E5E0EB] bg-white px-3 py-2.5 text-sm font-normal text-[#24212D] outline-none focus:border-[#6042A6] focus:ring-2 focus:ring-[#6042A6]/15"
+                            @change="applyFilters"
+                        >
+                            <option value="">Todos los vehículos</option>
+                            <option v-for="vehiculo in vehiculos" :key="vehiculo.id" :value="String(vehiculo.id)">
+                                {{ vehiculo.placa }} · {{ vehiculo.marca || '' }} {{ vehiculo.modelo || '' }}
                             </option>
                         </select>
                     </label>
@@ -267,7 +370,7 @@ const submitForm = () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-[#F0EDF3]">
-                            <tr v-for="orden in ordenes.data" :key="orden.id" class="transition hover:bg-[#FAF9FC]">
+                            <tr v-for="orden in ordenesVisibles" :key="orden.id" class="transition hover:bg-[#FAF9FC]">
                                 <td class="whitespace-nowrap px-5 py-4 text-sm font-bold text-[#6042A6]">
                                     {{ orden.numero_orden || `Orden #${orden.id}` }}
                                 </td>
@@ -286,7 +389,7 @@ const submitForm = () => {
                                     </a>
                                 </td>
                             </tr>
-                            <tr v-if="!ordenes.data?.length">
+                            <tr v-if="!ordenesVisibles.length">
                                 <td colspan="8" class="px-5 py-12 text-center">
                                     <p class="text-sm font-semibold text-[#24212D]">No hay órdenes para mostrar</p>
                                     <p class="mt-1 text-xs text-[#706A7A]">Ajusta los filtros o vuelve a consultar más tarde.</p>
@@ -418,6 +521,7 @@ const submitForm = () => {
                                     v-model="detalle.vehiculo_id"
                                     required
                                     class="w-full rounded-lg border border-[#E5E0EB] bg-white px-3 py-2.5 text-sm text-[#24212D] outline-none focus:border-[#6042A6]"
+                                    @change="estimateLine(index)"
                                 >
                                     <option value="" disabled>Selecciona un vehículo</option>
                                     <option v-for="vehiculo in vehiculos" :key="vehiculo.id" :value="String(vehiculo.id)">
@@ -449,8 +553,40 @@ const submitForm = () => {
                                 required
                                 placeholder="0.00"
                                 class="w-full rounded-lg border border-[#E5E0EB] px-3 py-2.5 text-sm text-[#24212D] outline-none focus:border-[#6042A6]"
+                                @input="estimateLine(index)"
                             >
                             <p v-if="form.errors[`detalles.${index}.monto`]" class="mt-1 text-xs text-red-600">{{ form.errors[`detalles.${index}.monto`] }}</p>
+                            <div v-if="estimates[index]?.loading" class="mt-3 rounded-lg bg-[#FAF9FC] px-3 py-2 text-xs text-[#706A7A]">
+                                Calculando al precio vigente…
+                            </div>
+                            <div v-else-if="estimates[index]?.error" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
+                                {{ estimates[index].error }}
+                            </div>
+                            <div v-else-if="estimates[index]?.data" class="mt-3 rounded-xl bg-[#EEE7FA]/60 p-3">
+                                <p class="text-[10px] font-bold uppercase tracking-wide text-[#6042A6]">Estimación al precio vigente</p>
+                                <dl class="mt-2 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                                    <div>
+                                        <dt class="text-[#706A7A]">Precio / galón</dt>
+                                        <dd class="mt-0.5 font-bold text-[#24212D]">{{ formatCurrency(estimates[index].data.precio_por_galon) }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-[#706A7A]">Galones aprox.</dt>
+                                        <dd class="mt-0.5 font-bold text-[#24212D]">{{ estimates[index].data.galones_aproximados ?? '—' }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-[#706A7A]">Litros aprox.</dt>
+                                        <dd class="mt-0.5 font-bold text-[#24212D]">{{ estimates[index].data.litros_aproximados ?? '—' }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-[#706A7A]">Kilómetros</dt>
+                                        <dd class="mt-0.5 font-bold text-[#24212D]">{{ estimates[index].data.kilometros_aproximados ?? '—' }}</dd>
+                                    </div>
+                                </dl>
+                                <p class="mt-2 text-[10px] text-[#706A7A]">
+                                    {{ estimates[index].data.combustible }} · {{ estimates[index].data.ciudad }}
+                                    <span v-if="estimates[index].data.vigente_desde">· vigente desde {{ estimates[index].data.vigente_desde }}</span>
+                                </p>
+                            </div>
                         </article>
                     </div>
 
